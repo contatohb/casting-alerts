@@ -281,6 +281,200 @@ def _get_json(url: str, session: requests.Session) -> Optional[dict]:
 
 
 # ─────────────────────────────────────────────────────────────────
+# Fontes externas identificadas (sites oficiais dos perfis seguidos)
+# ─────────────────────────────────────────────────────────────────
+
+FONTES_INSTAGRAM = {
+    # ── CRUZEIROS / NAVIOS ─────────────────────────────────────────
+    "carnivalentertainment": {"nome": "Carnival Entertainment", "url": "https://www.carnivalentertainment.com/", "categoria": "Navios/Cruzeiros"},
+    "celebritycruisescasting": {"nome": "Celebrity Cruises Entertainment", "url": "https://www.celebritycruisesentertainment.com/", "categoria": "Navios/Cruzeiros"},
+    "costacruisescasting": {"nome": "Costa Cruises Auditions", "url": "https://career.costacrociere.it/", "categoria": "Navios/Cruzeiros"},
+    "disneyauditions": {"nome": "Disney Auditions", "url": "https://jobs.disneycareers.com/auditions", "categoria": "Navios/Cruzeiros"},
+    "hollandamericacasting": {"nome": "Holland America Line", "url": "https://www.hollandamerica.com/", "categoria": "Navios/Cruzeiros"},
+    "msccruisescasting": {"nome": "MSC Cruises Careers", "url": "https://careers.msccruises.com/", "categoria": "Navios/Cruzeiros"},
+    "msccastingbrazil": {"nome": "MSC Cruises Casting Brazil", "url": "https://careers.msccruises.com/", "categoria": "Navios/Cruzeiros"},
+    "norwegiancruisecasting": {"nome": "NCLH Shows & Experiences", "url": "https://nclhcreativestudios.com/", "categoria": "Navios/Cruzeiros"},
+    "nclcasting": {"nome": "Norwegian Cruise Line Creative Studios", "url": "https://nclhcreativestudios.com/", "categoria": "Navios/Cruzeiros"},
+    "royalcaribbeancareers": {"nome": "Royal Caribbean Group Careers", "url": "https://careers.royalcaribbeangroup.com/", "categoria": "Navios/Cruzeiros"},
+    "royalcaribbeanentertainment": {"nome": "Royal Caribbean Productions", "url": "https://royalcaribbeanentertainment.com/", "categoria": "Navios/Cruzeiros"},
+    "aidacasting": {"nome": "AIDA Casting", "url": "https://aida.de/careers/en/casting", "categoria": "Navios/Cruzeiros"},
+    # ── TEATRO ─────────────────────────────────────────────────────
+    "cirquedusoleil": {"nome": "Cirque du Soleil", "url": "https://www.cirquedusoleil.com/", "categoria": "Teatro"},
+    "cirquedusoleilcasting": {"nome": "Cirque du Soleil Casting", "url": "https://casting.cirquedusoleil.com/", "categoria": "Teatro"},
+    "disneytheatricalcasting": {"nome": "Disney Theatrical Productions", "url": "https://disneyonbroadway.com/casting/", "categoria": "Teatro"},
+    "broadwaycasting": {"nome": "Broadway Casting", "url": "https://www.playbill.com/casting", "categoria": "Teatro"},
+    # ── AUDIOVISUAL BRASILEIRO ──────────────────────────────────────
+    "elencodigital": {"nome": "Elenco Digital", "url": "https://elencodigital.com.br/", "categoria": "Audiovisual"},
+    "guiadoator": {"nome": "Guia do Ator", "url": "https://guiadoator.com.br/", "categoria": "Audiovisual"},
+    "globocasting": {"nome": "Globo Captação de Talentos", "url": "https://captacao.talentosartisticos.g.globo/", "categoria": "Audiovisual"},
+    "globofilmes": {"nome": "Globo Filmes", "url": "https://gshow.globo.com/cultura-pop/filmes/globo-filmes/", "categoria": "Audiovisual"},
+    "a2filmesoficial": {"nome": "A2 Filmes", "url": "https://a2filmes.com.br/", "categoria": "Audiovisual"},
+    "sradocasting": {"nome": "Sra. do Casting", "url": "https://www.facebook.com/sra.docasting/", "categoria": "Audiovisual"},
+    "marcelaaltberg": {"nome": "Marcela Altberg", "url": "https://www.facebook.com/elenco.marcelaaltberg/", "categoria": "Audiovisual"},
+    "annetrevisan_elenco": {"nome": "Anne Trevisan", "url": "https://www.annetrevisan.com/", "categoria": "Audiovisual"},
+    "melina_anthis_elenco": {"nome": "Melina Anthís Youkali Elenco", "url": "https://melinaanthis.elencodigital.com.br/", "categoria": "Audiovisual"},
+    "renatamedeiros_el": {"nome": "Renata Medeiros", "url": "https://renatamedeiros.elencodigital.com.br/", "categoria": "Audiovisual"},
+    "betaborges_elenco": {"nome": "Beta Borges", "url": "https://betaborges.elencodigital.com.br/", "categoria": "Audiovisual"},
+    "we_elenco": {"nome": "We Elenco Produções Artísticas", "url": "https://www.facebook.com/we.elenco/", "categoria": "Audiovisual"},
+    "yr.elenco": {"nome": "YR Agenciamento", "url": "https://yolandarodriguesproducoes.com.br/", "categoria": "Audiovisual"},
+    "dea_diretores_de_elenco": {"nome": "DEA - Diretores de Elenco Associados", "url": "http://diretoresdeelenco.com.br/", "categoria": "Audiovisual"},
+    "luz.elenco": {"nome": "Felipe Luz (Luz Elenco)", "url": "https://www.facebook.com/elencoluz/?locale=pt_BR", "categoria": "Audiovisual"},
+    "testedeelencobrasil": {"nome": "Teste de Elenco Brasil", "url": "https://www.facebook.com/testedeelencobrasil/", "categoria": "Audiovisual"},
+    "selecaodeelenco": {"nome": "Seleção de Elenco", "url": "https://www.facebook.com/selecaodeelenco/", "categoria": "Audiovisual"},
+    "elencotla": {"nome": "T.L.A. Produções Artísticas", "url": "https://tlaproducoesartisticas.com.br/", "categoria": "Audiovisual"},
+    "autentica.elenco": {"nome": "Talentos Autêntica", "url": "https://www.autenticaprod.com/", "categoria": "Audiovisual"},
+    "vcelenco": {"nome": "VC Elenco", "url": "https://www.facebook.com/vcelenco/", "categoria": "Audiovisual"},
+    "mondicasting": {"nome": "Mondiale Agência de Elenco", "url": "http://agenciamondiale.com.br/", "categoria": "Audiovisual"},
+    "ritchellyelencoefig": {"nome": "Ritchelly Elenco e Figuração", "url": "https://www.facebook.com/RITCHELLYprodutor2/", "categoria": "Audiovisual"},
+    "redetvcasting": {"nome": "RedeTV! Casting", "url": "https://www.redetv.uol.com.br/", "categoria": "Audiovisual"},
+    # ── CASTING GERAL ──────────────────────────────────────────────
+    "projectcasting": {"nome": "Project Casting", "url": "https://projectcasting.com/", "categoria": "Geral"},
+    "openauditions": {"nome": "Open Auditions", "url": "https://www.openauditions.uk/", "categoria": "Geral"},
+    "ooppahoficial": {"nome": "Ooppah Soluções Artísticas", "url": "https://ooppah.com/", "categoria": "Geral"},
+    "nscasting": {"nome": "Nossa Senhora do Casting", "url": "https://nscast.me/", "categoria": "Geral"},
+    "castapp.oficial": {"nome": "Castapp", "url": "https://castapp.pro/", "categoria": "Geral"},
+    "pesquisadeelenco": {"nome": "Pesquisa de Elenco", "url": "https://pesquisadeelenco.com/", "categoria": "Geral"},
+    "elencodaraquel": {"nome": "Raquel Neves Casting", "url": "https://www.elencodaraquel.com/", "categoria": "Geral"},
+    "ranierifullcasting": {"nome": "Ranieri Full Casting", "url": "https://ranierifullcasting.com.br/", "categoria": "Geral"},
+    "marinicasting": {"nome": "Marini Casting", "url": "https://marinicasting.com.br/", "categoria": "Geral"},
+    "mesadebooker": {"nome": "Mesa de Booker", "url": "https://mesadebooker.com.br/", "categoria": "Geral"},
+    "orenda.casting": {"nome": "Orenda Casting", "url": "https://orendacasting.com.br/", "categoria": "Geral"},
+    "noarcasting": {"nome": "No Ar Casting", "url": "http://noarcasting.com.br/", "categoria": "Geral"},
+    "luzcastingg": {"nome": "Luz Casting", "url": "https://luzcasting.live/", "categoria": "Geral"},
+    "avantecasting": {"nome": "Avante Casting", "url": "https://www.avantecasting.com.br/", "categoria": "Geral"},
+    "armyagency_casting": {"nome": "Army Agency Casting", "url": "https://www.armycasting.com.br/", "categoria": "Geral"},
+    "attos.casting": {"nome": "Attos Casting", "url": "https://attoscasting.com/", "categoria": "Geral"},
+    "agenciavictoriacasting": {"nome": "Agência Victoria Casting", "url": "https://victoriacasting.com.br/", "categoria": "Geral"},
+    "castingimperio": {"nome": "Agência Império", "url": "https://agenciaimperio.com.br", "categoria": "Geral"},
+    "castinghouse_br": {"nome": "Casting House", "url": "https://castinghouse.com.br/", "categoria": "Geral"},
+    "armandocasting": {"nome": "Armando Casting", "url": "https://www.facebook.com/armandocasting/", "categoria": "Geral"},
+    "carlalima.casting": {"nome": "Carla Lima Produções Artísticas", "url": "https://carlalima.com.br/", "categoria": "Geral"},
+    "personajes.br": {"nome": "Personajes Brasil", "url": "https://personajesbr.com/", "categoria": "Geral"},
+    "pearsoncasting": {"nome": "Pearson Casting", "url": "https://www.pearsoncasting.com/", "categoria": "Geral"},
+    "dobcasting": {"nome": "Debbie O'Brien Casting", "url": "https://www.debbieobrien.net/", "categoria": "Geral"},
+    "erikaslama": {"nome": "Erika Slama", "url": "https://erikaslama.com.br/", "categoria": "Geral"},
+    "flowcasting": {"nome": "Flow Casting", "url": "https://flow.page/flowcastingjobs", "categoria": "Geral"},
+    "emmecasting": {"nome": "EMME Casting", "url": "https://www.facebook.com/emmecasting/", "categoria": "Geral"},
+    "merlincastings": {"nome": "Merlin Castings", "url": "https://www.facebook.com/MerlinCastings/", "categoria": "Geral"},
+    "ummacasting": {"nome": "Umma Casting", "url": "https://bio.site/ummacasting", "categoria": "Geral"},
+    "nossocasting": {"nome": "Nosso Casting", "url": "https://www.facebook.com/nossocasting/", "categoria": "Geral"},
+    "clubedocasting": {"nome": "Clube do Casting", "url": "https://www.facebook.com/clubedocasting/", "categoria": "Geral"},
+    "santocasting": {"nome": "Santo Casting", "url": "https://www.facebook.com/santocasting/", "categoria": "Geral"},
+    "leecastingelenco": {"nome": "Lee Casting", "url": "https://www.facebook.com/lee.casting/", "categoria": "Geral"},
+    "etcelenco": {"nome": "Etc Elenco", "url": "https://www.facebook.com/EtcElenco/", "categoria": "Geral"},
+    "me_casting": {"nome": "ME Casting Team", "url": "https://www.mecastingteam.me/", "categoria": "Geral"},
+    "casting.eastwest": {"nome": "East West Entertainment Group", "url": "https://www.eastwestevents.ae/", "categoria": "Geral"},
+    "ellacastingstockholm": {"nome": "Ella Casting", "url": "https://ellacasting.se/", "categoria": "Geral"},
+    "nordcasting": {"nome": "Nord Casting", "url": "https://www.nordcasting.se/", "categoria": "Geral"},
+    "synkcasting": {"nome": "Synk Casting", "url": "https://www.synkcasting.se/", "categoria": "Geral"},
+    "lmcasting": {"nome": "LM Casting", "url": "https://www.facebook.com/lottamalmcasting/", "categoria": "Geral"},
+    "universalcastingmiami": {"nome": "Universal Casting", "url": "https://www.universalcast.com/", "categoria": "Geral"},
+    "yulicasting": {"nome": "Yuli Casting", "url": "https://br.linkedin.com/in/yuli-mota", "categoria": "Geral"},
+    "viktoriia_talentguideagency": {"nome": "Viktoria Talent Management", "url": "https://viktoriia.management/", "categoria": "Geral"},
+    "dc.casting": {"nome": "DC Casting & Produções", "url": "https://www.facebook.com/dccastiing/", "categoria": "Geral"},
+    "vazprod": {"nome": "VAZ Produção e Casting", "url": "https://www.facebook.com/vazproducaoecasting/", "categoria": "Geral"},
+    "agenciarenatareis": {"nome": "Agência de Casting Renata Reis", "url": "https://www.facebook.com/renata.reis.562/", "categoria": "Geral"},
+    "mairareiscasting": {"nome": "Máira Reis Casting", "url": "http://www.instagram.com/mairareiscasting/", "categoria": "Geral"},
+    "dii.casting": {"nome": "Dii Casting", "url": "https://www.instagram.com/dii.casting/", "categoria": "Geral"},
+    "a2castinghouse": {"nome": "A2 Casting House", "url": "https://www.a2castinghouse.com/", "categoria": "Geral"},
+}
+
+
+def scrape_fonte_generica(url: str, nome_fonte: str, categoria: str,
+                          session: requests.Session) -> List[Dict]:
+    """
+    Scraper genérico para sites de casting.
+    Extrai oportunidades de qualquer URL com estrutura HTML padrão.
+    """
+    oportunidades = []
+    try:
+        html = _get(url, session)
+        if not html:
+            return oportunidades
+
+        soup = BeautifulSoup(html, "html.parser")
+
+        # Remover scripts, estilos e navegação
+        for tag in soup(["script", "style", "nav", "footer", "header"]):
+            tag.decompose()
+
+        # Estratégia 1: blocos com palavras-chave de casting
+        candidatos = soup.find_all(
+            lambda t: t.name in ["article", "div", "li", "section"]
+            and any(kw in (t.get_text(" ", strip=True).lower())
+                    for kw in ["casting", "audição", "seleção", "elenco",
+                               "ator", "atriz", "cantor", "performer",
+                               "audition", "open call", "teste"])
+            and len(t.get_text(strip=True)) > 50
+        )
+
+        vistos = set()
+        for item in candidatos[:30]:  # limitar para não sobrecarregar
+            titulo_tag = item.find(["h1", "h2", "h3", "h4", "a"])
+            if not titulo_tag:
+                continue
+            titulo = titulo_tag.get_text(strip=True)[:200]
+            if not titulo or titulo in vistos:
+                continue
+            vistos.add(titulo)
+
+            texto_completo = item.get_text(" ", strip=True)
+            link_tag = item.find("a", href=True)
+            link = ""
+            if link_tag:
+                href = link_tag["href"]
+                if href.startswith("http"):
+                    link = href
+                elif href.startswith("/"):
+                    from urllib.parse import urlparse
+                    base = urlparse(url)
+                    link = f"{base.scheme}://{base.netloc}{href}"
+
+            oportunidade = {
+                "titulo": titulo,
+                "descricao": texto_completo[:500],
+                "genero": "",
+                "idade_minima": "",
+                "idade_maxima": "",
+                "aparencia": "",
+                "data_inscricao_inicio": "",
+                "data_inscricao_fim": _extrair_data(texto_completo) or "",
+                "data_teste": "",
+                "data_gravacao": "",
+                "cache": _extrair_cache(texto_completo) or "",
+                "o_que_levar": "",
+                "endereco": _extrair_endereco(texto_completo) or "",
+                "link_inscricao": link,
+                "link_formulario": "",
+                "email_contato": "",
+                "categoria": categoria,
+                "localizacao": "",
+                "link_detalhe": link,
+                "fonte": nome_fonte,
+            }
+
+            t = texto_completo.lower()
+            emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', texto_completo)
+            if emails:
+                oportunidade["email_contato"] = emails[0]
+
+            if any(x in t for x in ["homem", "masculino", "male", "man", "men"]):
+                oportunidade["genero"] = "Homem"
+            elif any(x in t for x in ["mulher", "feminino", "female", "woman", "women"]):
+                oportunidade["genero"] = "Mulher"
+            else:
+                oportunidade["genero"] = "Não especificado"
+
+            oportunidades.append(oportunidade)
+
+        time.sleep(SLEEP)
+    except Exception as e:
+        logger.debug(f"Erro ao scrape {nome_fonte}: {e}")
+
+    return oportunidades
+
+
+# ─────────────────────────────────────────────────────────────────
 # Scrapers por fonte
 # ─────────────────────────────────────────────────────────────────
 
@@ -510,7 +704,21 @@ def buscar_casting(enriquecer_detalhes: bool = False, max_enriquecimento: int = 
         oportunidades.extend(scrape_oppah(session))
     except Exception as e:
         erros.append(f"Oppah: {str(e)[:100]}")
-    
+
+    # Buscar em todas as fontes externas identificadas (sites dos perfis seguidos)
+    logger.info(f"Buscando em {len(FONTES_INSTAGRAM)} fontes externas identificadas...")
+    for handle, info in FONTES_INSTAGRAM.items():
+        nome = info["nome"]
+        url  = info["url"]
+        cat  = info["categoria"]
+        try:
+            resultados = scrape_fonte_generica(url, nome, cat, session)
+            if resultados:
+                logger.info(f"  {nome}: {len(resultados)} oportunidade(s)")
+            oportunidades.extend(resultados)
+        except Exception as e:
+            erros.append(f"{nome}: {str(e)[:80]}")
+
     # Filtrar por critérios
     oportunidades_filtradas = []
     for opp in oportunidades:
