@@ -392,10 +392,18 @@ FONTES_INSTAGRAM = {
     # ── PERFIS REVISITADOS – links extraídos da bio ──
     # @patriciaprodutorad: perfil removido/inexistente no Instagram
     # @a2.casting: agência de marketing de influência (Be Around), não relevante para casting de atores
+    # @castingbrasil, @telenovelascasting, @recordcasting, @sbttv_casting, @bandcasting: perfis inexistentes
+    # @netflixbrasil_casting, @amazonprimecasting, @warnercasting, @universalpicturescasting: perfis inexistentes
+    # @zarpellon_casting, @casadacasting, @elencobrasil, @dreamworksonboard: perfis inexistentes
     "castingrm": {"nome": "Casting RM (Rodrigo Morais)", "url": "https://www.instagram.com/castingrm/", "categoria": "Teatro"},
     "prooo_dutora": {"nome": "Prooo - Diretora de Elenco", "url": "https://elenconarede.com.br/", "categoria": "Audiovisual"},
     "elenconarede": {"nome": "Elenco na Rede", "url": "https://elenconarede.com.br/", "categoria": "Audiovisual"},
     "elenconegro": {"nome": "Elenco Negro", "url": "https://www.elenconegro.com.br/", "categoria": "Audiovisual"},
+    "casting.brasil": {"nome": "Casting Brasil", "url": "https://www.instagram.com/casting.brasil/", "categoria": "Audiovisual"},
+    "sixflags_casting": {"nome": "Six Flags Live Entertainment", "url": "https://jobs.sixflags.com/live-entertainment", "categoria": "Teatro"},
+    "officialdisneyauditions": {"nome": "Disney Auditions (oficial)", "url": "https://jobs.disneycareers.com/auditions", "categoria": "Teatro"},
+    "hbocasting": {"nome": "HBO Casting", "url": "https://www.backstage.com/casting/open-casting-calls/hbo/", "categoria": "Audiovisual"},
+    "lm.casting": {"nome": "LM Casting", "url": "https://www.facebook.com/lottamalmcasting/", "categoria": "Geral"},
 }
 
 
