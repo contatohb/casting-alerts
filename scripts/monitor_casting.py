@@ -404,6 +404,23 @@ FONTES_INSTAGRAM = {
     "officialdisneyauditions": {"nome": "Disney Auditions (oficial)", "url": "https://jobs.disneycareers.com/auditions", "categoria": "Teatro"},
     "hbocasting": {"nome": "HBO Casting", "url": "https://www.backstage.com/casting/open-casting-calls/hbo/", "categoria": "Audiovisual"},
     "lm.casting": {"nome": "LM Casting", "url": "https://www.facebook.com/lottamalmcasting/", "categoria": "Geral"},
+    # ── TV ABERTA BRASIL ──
+    "sbt_casting": {"nome": "SBT Elenco", "url": "https://elenco.tvsbt.com.br/", "categoria": "Audiovisual"},
+    "band_casting": {"nome": "Band Casting", "url": "https://band.jobs.recrut.ai/apply/UNA04Q", "categoria": "Audiovisual"},
+    "redetv_casting": {"nome": "RedeTV! Talentos Brilhantes", "url": "https://www.talentosbrilhantes.com.br/cadastro/", "categoria": "Audiovisual"},
+    "tvcultura_talentos": {"nome": "TV Cultura Banco de Talentos", "url": "https://tvcultura.com.br/bancodetalentos/", "categoria": "Audiovisual"},
+    "tvbrasil_selecao": {"nome": "TV Brasil / EBC Seleção", "url": "https://selecao.tvbrasil.ebc.com.br/", "categoria": "Audiovisual"},
+    # ── STREAMING / GLOBOPLAY ──
+    "globoplay_talentos": {"nome": "Globoplay / Talentos Artísticos Globo", "url": "https://captacao.talentosartisticos.g.globo/home", "categoria": "Audiovisual"},
+    # ── AGÊNCIAS DE TALENTOS ──
+    "agenciafivecasting": {"nome": "Five Casting", "url": "https://fivecasting.com.br/", "categoria": "Audiovisual"},
+    "agrain": {"nome": "Aline Grain Agência", "url": "https://www.alinegrain.com.br/", "categoria": "Audiovisual"},
+    "fernandaribasmanagement": {"nome": "Fernanda Ribas Management", "url": "https://fernandaribas.com/", "categoria": "Audiovisual"},
+    "glossmodel": {"nome": "Agência Gloss", "url": "https://glossmodel.com.br/", "categoria": "Geral"},
+    "infinity.brazil": {"nome": "Infinity Brazil (Cruzeiros)", "url": "https://infinity-brazil.com.br/pt/", "categoria": "Navios/Cruzeiros"},
+    "latinwe": {"nome": "Latin World Entertainment", "url": "https://www.latinwe.com/", "categoria": "Audiovisual"},
+    "lmaproducoes": {"nome": "Grupo LMA Produções", "url": "https://www.lmaproducoes.com.br/", "categoria": "Audiovisual"},
+    "voxtalents": {"nome": "Vox Talents", "url": "https://www.voxtalents.com/", "categoria": "Audiovisual"},
 }
 
 
@@ -705,7 +722,7 @@ def scrape_oppah(session: requests.Session) -> List[Dict]:
 def buscar_casting(enriquecer_detalhes: bool = False, max_enriquecimento: int = 30) -> Tuple[List[Dict], List[str]]:
     """
     Busca oportunidades de casting de múltiplas fontes e filtra por critérios.
-    
+
     Retorna:
         (lista_de_oportunidades, lista_de_erros)
     """
@@ -732,9 +749,21 @@ def buscar_casting(enriquecer_detalhes: bool = False, max_enriquecimento: int = 
     except Exception as e:
         erros.append(f"Oppah: {str(e)[:100]}")
 
-    # Buscar em todas as fontes externas identificadas (sites dos perfis seguidos)
-    logger.info(f"Buscando em {len(FONTES_INSTAGRAM)} fontes externas identificadas...")
-    for handle, info in FONTES_INSTAGRAM.items():
+    # Executar autodescoberta de novos perfis
+    try:
+        from scripts.autodescoberta import executar_autodescoberta
+        fontes_descobertas = executar_autodescoberta(FONTES_INSTAGRAM)
+        logger.info(f"Autodescoberta: {len(fontes_descobertas)} fonte(s) no banco de descobertas")
+    except Exception as e:
+        fontes_descobertas = {}
+        logger.warning(f"Autodescoberta falhou (não crítico): {e}")
+
+    # Combinar fontes fixas com fontes descobertas automaticamente
+    todas_fontes = {**FONTES_INSTAGRAM, **fontes_descobertas}
+
+    # Buscar em todas as fontes externas identificadas (sites dos perfis seguidos + descobertas)
+    logger.info(f"Buscando em {len(todas_fontes)} fontes externas identificadas...")
+    for handle, info in todas_fontes.items():
         nome = info["nome"]
         url  = info["url"]
         cat  = info["categoria"]
