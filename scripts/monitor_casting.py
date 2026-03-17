@@ -389,6 +389,13 @@ FONTES_INSTAGRAM = {
     "dea_diretores_de_": {"nome": "DEA - Diretores de Elenco Associados", "url": "http://diretoresdeelenco.com.br/", "categoria": "Audiovisual"},
     "ag_oknelle_elenco": {"nome": "Ag. Oknelle Elenco", "url": "https://www.instagram.com/ag_oknelle_elenco/", "categoria": "Audiovisual"},
     "pauloparedes.elenco": {"nome": "Paulo Paredes Elenco", "url": "https://www.instagram.com/pauloparedes.elenco/", "categoria": "Audiovisual"},
+    # ── PERFIS REVISITADOS – links extraídos da bio ──
+    # @patriciaprodutorad: perfil removido/inexistente no Instagram
+    # @a2.casting: agência de marketing de influência (Be Around), não relevante para casting de atores
+    "castingrm": {"nome": "Casting RM (Rodrigo Morais)", "url": "https://www.instagram.com/castingrm/", "categoria": "Teatro"},
+    "prooo_dutora": {"nome": "Prooo - Diretora de Elenco", "url": "https://elenconarede.com.br/", "categoria": "Audiovisual"},
+    "elenconarede": {"nome": "Elenco na Rede", "url": "https://elenconarede.com.br/", "categoria": "Audiovisual"},
+    "elenconegro": {"nome": "Elenco Negro", "url": "https://www.elenconegro.com.br/", "categoria": "Audiovisual"},
 }
 
 
