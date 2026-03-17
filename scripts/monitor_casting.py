@@ -377,6 +377,18 @@ FONTES_INSTAGRAM = {
     "mairareiscasting": {"nome": "Máira Reis Casting", "url": "http://www.instagram.com/mairareiscasting/", "categoria": "Geral"},
     "dii.casting": {"nome": "Dii Casting", "url": "https://www.instagram.com/dii.casting/", "categoria": "Geral"},
     "a2castinghouse": {"nome": "A2 Casting House", "url": "https://www.a2castinghouse.com/", "categoria": "Geral"},
+    # ── ALIASES E HANDLES TRUNCADOS (mapeamento de handles da lista original) ──
+    "cirquedusoleilca": {"nome": "Cirque du Soleil Casting", "url": "https://casting.cirquedusoleil.com/", "categoria": "Teatro"},
+    "agenciavictoriacast": {"nome": "Agência Victoria Casting", "url": "https://victoriacasting.com.br/", "categoria": "Geral"},
+    "miss.casting_isabe": {"nome": "Isabel Lobo Casting", "url": "https://isabellobo.elencodigital.com.br/", "categoria": "Audiovisual"},
+    "miss.casting_isabellobo": {"nome": "Isabel Lobo Casting", "url": "https://isabellobo.elencodigital.com.br/", "categoria": "Audiovisual"},
+    "pro_casting_and_c": {"nome": "Pro Casting and Coaching", "url": "https://www.procasting.se/", "categoria": "Geral"},
+    "studiiocasting": {"nome": "Studiio Casting", "url": "https://www.instagram.com/studiiocasting/", "categoria": "Audiovisual"},
+    "viktoriia_talentguid": {"nome": "Viktoria Talent Management", "url": "https://viktoriia.management/", "categoria": "Geral"},
+    "melina_anthis_elen": {"nome": "Melina Anthís Youkali Elenco", "url": "https://melinaanthis.elencodigital.com.br/", "categoria": "Audiovisual"},
+    "dea_diretores_de_": {"nome": "DEA - Diretores de Elenco Associados", "url": "http://diretoresdeelenco.com.br/", "categoria": "Audiovisual"},
+    "ag_oknelle_elenco": {"nome": "Ag. Oknelle Elenco", "url": "https://www.instagram.com/ag_oknelle_elenco/", "categoria": "Audiovisual"},
+    "pauloparedes.elenco": {"nome": "Paulo Paredes Elenco", "url": "https://www.instagram.com/pauloparedes.elenco/", "categoria": "Audiovisual"},
 }
 
 
