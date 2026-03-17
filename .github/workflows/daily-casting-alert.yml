@@ -1,0 +1,61 @@
+name: Daily Casting Alert
+
+on:
+  schedule:
+    - cron: '0 13 * * *'  # 10:00 BRT (UTC-3 = 13:00 UTC)
+  workflow_dispatch: {}
+
+permissions:
+  contents: write  # necessário para salvar o histórico de deduplicação
+
+jobs:
+  casting-alert:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install requests beautifulsoup4 python-dotenv
+
+      - name: Install manus-mcp-cli
+        run: |
+          pip install manus-mcp-cli 2>/dev/null || true
+
+      - name: Send daily casting alert
+        env:
+          MONITOR_RECIPIENT: huddsong@gmail.com
+        run: |
+          cd scripts && python alerta_casting.py
+
+      # ── Persistência do histórico de deduplicação ──────────────────
+      # Salva casting_seen.json no repositório após cada execução.
+      # Sem este passo, o histórico seria perdido a cada run e as
+      # mesmas oportunidades seriam reenviadas no dia seguinte.
+      - name: Persistir histórico de deduplicação
+        if: always()
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main || true
+          git add data/casting_seen.json || true
+          git diff --cached --quiet || \
+            git commit -m "chore: atualizar histórico de casting [skip ci]"
+          git push origin main || true
+
+      - name: Notificar falha
+        if: failure()
+        run: |
+          echo "Alerta de casting falhou em $(date)"
+          exit 1
