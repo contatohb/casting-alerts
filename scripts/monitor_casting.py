@@ -52,6 +52,257 @@ IDADE_MINIMA_ALVO = 40
 APARENCIA_MINIMA = 35
 APARENCIA_MAXIMA = 50
 
+# ─────────────────────────────────────────────────────────────────
+# Filtro étnico/racial — excluir seleções EXCLUSIVAS para grupos incompatíveis
+# ─────────────────────────────────────────────────────────────────
+# Termos que, quando associados a exclusividade, indicam que a seleção
+# é restrita a um grupo étnico/racial incompatível com o perfil do usuário
+# (homem branco, descendente de italiano, brasileiro).
+ETNIAS_EXCLUSIVAS_EXCLUIR = [
+    # Raça/cor explícita
+    "negro", "negra", "negros", "negras",
+    "preto", "preta", "pretos", "pretas",
+    "pardo", "parda", "pardos", "pardas",
+    "afrodescendente", "afro-descendente", "afrobrasileiro",
+    "afro-brasileiro", "afro brasileiro",
+    "oriental", "orientais", "asiático", "asiática", "asiáticos",
+    "indígena", "indígenas", "indigena", "indigenas",
+    "quilombola", "quilombolas",
+    # Termos em inglês
+    "black", "african american", "afro-american",
+    "asian", "indigenous", "native",
+    # Termos de diversidade racial exclusiva
+    "pessoas negras", "artistas negros", "atores negros",
+    "cantores negros", "performers negros",
+]
+
+# Modificadores de exclusividade — a etnia só exclui quando acompanhada
+# de um desses termos, indicando restrição (não mera menção).
+# IMPORTANTE: evitar termos genéricos como "para" isolado para não gerar falsos positivos.
+MODIFICADORES_EXCLUSIVIDADE = [
+    "exclusiv",          # exclusivo, exclusivamente, exclusiva
+    "somente",
+    "apenas",
+    "só para",           # "só para negros" (não "só" isolado)
+    "restrit",           # restrito, restrita, restritos
+    "destinad",          # destinado, destinada
+    "voltad",            # voltado, voltada
+    "prioritari",        # prioritariamente
+    "obrigatoriamente",
+    "unicamente",
+    "only",
+    "exclusively",
+    "restricted to",
+    "vagas para",
+    "oportunidade para",
+    "seleção para",
+    "casting para",
+    "procuramos",        # "procuramos atores negros"
+    "buscamos",          # "buscamos cantores negros"
+    "procura-se",
+    "busca-se",
+    "vaga para",
+    "aberto para",       # "casting aberto para negros" (exclusivo)
+    "direcionad",        # direcionado, direcionada
+]
+
+
+# Termos que, quando presentes na janela, ANULAM a exclusividade
+# (indicam que a seleção é inclusiva, não exclusiva).
+# Nota: listas de etnias só são inclusivas quando incluem "brancos" ou "caucasianos".
+CONTRA_EXCLUSIVIDADE = [
+    "todos", "todas", "qualquer", "qualquer perfil", "todos os perfis",
+    "aberto a todos", "aberto para todos", "sem restrição",
+    "independente", "independentemente",
+    "inclusive", "inclusão", "inclusivo", "inclusiva",
+    "e brancos",        # lista que inclui brancos = inclusivo para o usuário
+    "brancos e",        # idem
+    "caucasianos",      # menciona caucasianos na lista
+    "anyone", "everyone", "all backgrounds", "all ethnicities",
+    "todas as etnias", "todas as raças", "qualquer etnia",
+]
+
+
+def _excluir_por_etnia(texto: str) -> bool:
+    """
+    Retorna True se a oportunidade deve ser EXCLUÍDA por ser
+    exclusivamente destinada a uma etnia/raça incompatível com o perfil
+    do usuário (homem branco, descendente de italiano, brasileiro).
+
+    A exclusão só ocorre quando há combinação de:
+    - Termo de etnia incompatível
+    - Modificador de exclusividade (somente, apenas, exclusivo, etc.)
+    - E NÃO há contra-indicadores de inclusividade (todos, diversidade, etc.)
+
+    Seleções que mencionam diversidade sem exclusividade são mantidas.
+    """
+    if not texto:
+        return False
+
+    t = texto.lower()
+
+    # Verificar cada etnia incompatível
+    for etnia in ETNIAS_EXCLUSIVAS_EXCLUIR:
+        if etnia not in t:
+            continue
+        # Verificar se há modificador de exclusividade próximo (janela de 150 chars)
+        idx = t.find(etnia)
+        janela_inicio = max(0, idx - 150)
+        janela_fim = min(len(t), idx + len(etnia) + 150)
+        janela = t[janela_inicio:janela_fim]
+
+        # Verificar se há contra-indicador de inclusividade na janela
+        if any(contra in janela for contra in CONTRA_EXCLUSIVIDADE):
+            continue  # É inclusivo, não excluir
+
+        if any(mod in janela for mod in MODIFICADORES_EXCLUSIVIDADE):
+            return True  # Exclusão confirmada
+
+    return False  # Manter a oportunidade
+
+
+def _extrair_perfil_completo(texto: str) -> str:
+    """
+    Extrai e consolida o detalhamento completo do perfil procurado:
+    etnia, idioma, tipo físico, habilidades, experiência, características
+    especiais e quaisquer outros requisitos mencionados na oportunidade.
+
+    Retorna uma string formatada com os itens encontrados,
+    ou string vazia se nenhum detalhe for identificado.
+    """
+    if not texto:
+        return ""
+
+    t = texto.lower()
+    itens = []
+
+    # ── Etnia / Cor ──
+    etnias_mencoes = [
+        ("branco", "Branco/Caucasiano"),
+        ("caucasiano", "Caucasiano"),
+        ("europeu", "Europeu"),
+        ("italiano", "Italiano/Descendente"),
+        ("latino", "Latino"),
+        ("hispânico", "Hispânico"),
+        ("negro", "Negro"),
+        ("preto", "Preto"),
+        ("pardo", "Pardo"),
+        ("oriental", "Oriental/Asiático"),
+        ("asiático", "Asiático"),
+        ("indígena", "Indígena"),
+        ("indigena", "Indígena"),
+        ("afrodescendente", "Afrodescendente"),
+        ("mestiço", "Mestiço"),
+    ]
+    for termo, label in etnias_mencoes:
+        if termo in t:
+            itens.append(f"Etnia/Cor: {label}")
+            break  # Apenas o primeiro match por categoria
+
+    # ── Idioma ──
+    idiomas = [
+        (r'ingl[eê]s', "Inglês"),
+        (r'espanhol', "Espanhol"),
+        (r'portugu[eê]s', "Português"),
+        (r'italiano', "Italiano"),
+        (r'franc[eê]s', "Francês"),
+        (r'alem[ãa]o', "Alemão"),
+        (r'mandar[ií]m|chin[eê]s', "Mandarim/Chinês"),
+        (r'japon[eê]s', "Japonês"),
+        (r'bilíngue|bilingue', "Bilíngue"),
+        (r'fluente', "Fluência exigida"),
+    ]
+    idiomas_encontrados = []
+    for padrao, label in idiomas:
+        if re.search(padrao, t):
+            idiomas_encontrados.append(label)
+    if idiomas_encontrados:
+        itens.append(f"Idioma: {', '.join(idiomas_encontrados)}")
+
+    # ── Tipo físico / aparência ──
+    tipos_fisicos = [
+        (r'alto|alta|altura', "Alto(a)"),
+        (r'baixo|baixa', "Baixo(a)"),
+        (r'magro|magra|esbelto', "Magro(a)/Esbelto"),
+        (r'gordo|gorda|plus size|sobrepeso', "Plus size/Sobrepeso"),
+        (r'musculoso|atlético|atleti', "Atlético/Musculoso"),
+        (r'barba', "Com barba"),
+        (r'sem barba|barbeado', "Sem barba"),
+        (r'cabelo longo', "Cabelo longo"),
+        (r'cabelo curto', "Cabelo curto"),
+        (r'careca|sem cabelo', "Careca"),
+        (r'loiro|loira|louro', "Loiro(a)"),
+        (r'moreno|morena', "Moreno(a)"),
+        (r'ruivo|ruiva', "Ruivo(a)"),
+        (r'olhos claros|olhos azuis|olhos verdes', "Olhos claros"),
+        (r'olhos escuros|olhos castanhos', "Olhos escuros"),
+        (r'tipo europeu', "Tipo europeu"),
+        (r'tipo mediterrâneo|mediterraneo', "Tipo mediterrâneo"),
+    ]
+    for padrao, label in tipos_fisicos:
+        if re.search(padrao, t):
+            itens.append(f"Tipo físico: {label}")
+
+    # ── Habilidades ──
+    habilidades = [
+        (r'cant[ao]r|canto|voz', "Canto/Voz"),
+        (r'dan[cç][ao]r|dan[cç]a', "Dança"),
+        (r'ator|atuar|atua[cç][ãa]o', "Atuação"),
+        (r'musiqu[ao]|instrumento|tocar', "Música/Instrumento"),
+        (r'acrobaci[ao]|acrobata', "Acrobacia"),
+        (r'circo|circense', "Circo/Cirquense"),
+        (r'malabar[ie]', "Malabarismo"),
+        (r'teatro musical|musical', "Teatro Musical"),
+        (r'dublagem|dublar', "Dublagem"),
+        (r'locução|locutor', "Locução"),
+        (r'comédia|humor', "Comédia/Humor"),
+        (r'improvis[ao]', "Improvisação"),
+        (r'stand.?up', "Stand-up"),
+        (r'natação|nadar', "Natação"),
+        (r'equitação|cavalgar|cavalo', "Equitação"),
+        (r'lut[ao]|artes marciais|capoeira', "Artes marciais/Luta"),
+    ]
+    habilidades_encontradas = []
+    for padrao, label in habilidades:
+        if re.search(padrao, t):
+            habilidades_encontradas.append(label)
+    if habilidades_encontradas:
+        itens.append(f"Habilidades: {', '.join(habilidades_encontradas)}")
+
+    # ── Experiência ──
+    experiencias = [
+        (r'experi[eê]ncia comprov', "Experiência comprovada exigida"),
+        (r'sem experi[eê]ncia|iniciante|estreante', "Sem experiência necessária"),
+        (r'profissional', "Perfil profissional"),
+        (r'amador', "Amador aceito"),
+        (r'curriculum|currículo|portfólio|portfolio', "Currículo/Portfólio exigido"),
+        (r'foto[s]?\s+(?:recente|atual|3x4)', "Foto recente exigida"),
+        (r'vídeo|video\s+(?:de\s+)?apresenta[cç][ãa]o', "Vídeo de apresentação exigido"),
+        (r'book\s+fotográfico|book\s+fotografico|book\s+de\s+fotos', "Book fotográfico exigido"),
+    ]
+    for padrao, label in experiencias:
+        if re.search(padrao, t):
+            itens.append(f"Requisito: {label}")
+
+    # ── Características especiais ──
+    especiais = [
+        (r'pessoa[s]?\s+com\s+defici[eê]ncia|pcd', "PCD (Pessoa com Deficiência)"),
+        (r'lgbtq|lgbt|trans|transgênero|não.?binário', "LGBTQIA+"),
+        (r'criança|infantil', "Criança/Infantil"),
+        (r'idoso|terceira\s+idade|sênior', "Idoso/Sênior"),
+        (r'gestante|grávida', "Gestante"),
+        (r'gêmeos|gêmeas', "Gêmeos"),
+        (r'tatuagem|tatuado', "Com tatuagem"),
+        (r'sem\s+tatuagem', "Sem tatuagem"),
+        (r'piercing', "Com piercing"),
+    ]
+    for padrao, label in especiais:
+        if re.search(padrao, t):
+            itens.append(f"Característica: {label}")
+
+    return " | ".join(itens) if itens else ""
+
+
 # Palavras-chave para categorizar oportunidades
 CATEGORIAS_TEATRO = ["teatro", "peça", "dramaturgia", "palco", "cena"]
 CATEGORIAS_AUDIOVISUAL = ["filme", "série", "novela", "comercial", "videoclipe", "web", "youtube", "tiktok"]
@@ -781,11 +1032,22 @@ def buscar_casting(enriquecer_detalhes: bool = False, max_enriquecimento: int = 
         # Verificar gênero
         if not _atende_criterios_genero(opp.get("genero", "")):
             continue
-        
+
         # Verificar idade/aparência
         if not _atende_criterios_idade_aparencia(opp):
             continue
-        
+
+        # Verificar exclusão étnica (excluir seleções exclusivas para etnias incompatíveis)
+        texto_completo = f"{opp.get('titulo', '')} {opp.get('descricao', '')}"
+        if _excluir_por_etnia(texto_completo):
+            logger.debug(f"Excluído por etnia exclusiva: {opp.get('titulo', '')[:60]}")
+            continue
+
+        # Enriquecer com detalhamento completo do perfil procurado
+        perfil = _extrair_perfil_completo(texto_completo)
+        if perfil:
+            opp["perfil_procurado"] = perfil
+
         oportunidades_filtradas.append(opp)
     
     logger.info(f"Total de oportunidades encontradas: {len(oportunidades)}")
@@ -830,7 +1092,9 @@ def formatar_email_casting(oportunidades: List[Dict], erros: List[str]) -> str:
     
     linhas = [
         f"ALERTA DE OPORTUNIDADES DE CASTING/AUDIÇÕES — {hoje}",
-        f"Critérios: Homem | Acima de 40 anos OU aparência 35-50 anos OU não especificado",
+        f"Perfil: Homem | Branco/Caucasiano | Descendente de italiano | Fala português, inglês e espanhol",
+        f"Critérios de idade: Acima de 40 anos OU aparência 35-50 anos OU não especificado",
+        f"Excluídas: seleções exclusivas para negros, pardos, orientais, indígenas ou outras etnias incompatíveis",
         f"Total de oportunidades novas encontradas: {len(oportunidades)}",
         "=" * 80,
         "",
@@ -874,6 +1138,14 @@ def formatar_email_casting(oportunidades: List[Dict], erros: List[str]) -> str:
                 aparencia = opp.get("aparencia", "")
                 if aparencia:
                     linhas.append(f"  Aparência      : {aparencia}")
+
+                perfil_procurado = opp.get("perfil_procurado", "")
+                if perfil_procurado:
+                    # Exibir cada item do perfil em linha separada para facilitar leitura
+                    itens_perfil = perfil_procurado.split(" | ")
+                    linhas.append(f"  Perfil procurado:")
+                    for item in itens_perfil:
+                        linhas.append(f"    • {item}")
                 
                 cache = opp.get("cache", "")
                 if cache:
