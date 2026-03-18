@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import subprocess
 import sys
 from datetime import date
 from typing import Dict, List
@@ -63,43 +62,58 @@ def save_seen(seen: dict, path: str) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────
-# Envio de email via Gmail MCP
+# Envio de email via SMTP (Gmail com App Password)
 # ─────────────────────────────────────────────────────────────────
 
+GMAIL_SENDER = os.getenv("GMAIL_SENDER", "huddsong@gmail.com")
+GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "")
+
+
 def send_email(subject: str, body: str, recipient: str) -> bool:
-    import tempfile
-    payload = {
-        "messages": [{
-            "subject": subject,
-            "to": [recipient],
-            "content": body,
-        }]
-    }
-    # Salvar payload em arquivo temporário para evitar problemas de escaping no shell
-    tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding='utf-8')
-    json.dump(payload, tmp, ensure_ascii=False)
-    tmp.flush()
-    tmp.close()
-    try:
-        with open(tmp.name, 'r', encoding='utf-8') as f:
-            input_str = f.read()
-        result = subprocess.run(
-            ["manus-mcp-cli", "tool", "call", "gmail_send_messages",
-             "--server", "gmail", "--input", input_str],
-            capture_output=True, text=True, timeout=120
-        )
-        if result.returncode == 0:
-            logger.info(f"Email enviado para {recipient}")
-            return True
-        else:
-            logger.error(f"Erro ao enviar email: {result.stderr[:300]}")
-            return False
-    except Exception as exc:
-        logger.error(f"Gmail MCP: {exc}")
+    """
+    Envia email via SMTP usando Gmail com App Password.
+    Requer a variável de ambiente GMAIL_APP_PASSWORD configurada.
+    """
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    if not GMAIL_APP_PASSWORD:
+        logger.error("GMAIL_APP_PASSWORD não configurado. Defina o secret no GitHub Actions.")
         return False
-    finally:
-        if os.path.exists(tmp.name):
-            os.remove(tmp.name)
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = GMAIL_SENDER
+        msg["To"] = recipient
+
+        # Corpo em texto puro
+        part_text = MIMEText(body, "plain", "utf-8")
+        msg.attach(part_text)
+
+        # Corpo em HTML (converte quebras de linha e preserva formatação)
+        html_body = (
+            "<html><body><pre style='font-family:monospace;font-size:13px;'>"
+            + body.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            + "</pre></body></html>"
+        )
+        part_html = MIMEText(html_body, "html", "utf-8")
+        msg.attach(part_html)
+
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(GMAIL_SENDER, GMAIL_APP_PASSWORD)
+            server.sendmail(GMAIL_SENDER, recipient, msg.as_string())
+
+        logger.info(f"Email enviado para {recipient} via SMTP")
+        return True
+
+    except smtplib.SMTPAuthenticationError:
+        logger.error("Falha de autenticação SMTP. Verifique GMAIL_APP_PASSWORD.")
+        return False
+    except Exception as exc:
+        logger.error(f"Erro ao enviar email via SMTP: {exc}")
+        return False
 
 
 # ─────────────────────────────────────────────────────────────────
