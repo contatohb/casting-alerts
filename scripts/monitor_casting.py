@@ -318,7 +318,7 @@ def _extrair_perfil_completo(conteudo: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 RSS_FEEDS = [
-    # Guia do Ator
+    # ── Guia do Ator ──────────────────────────────────────────────────────────
     {
         "nome": "Guia do Ator",
         "url": "https://guiadoator.com.br/category/testes/feed/",
@@ -329,16 +329,100 @@ RSS_FEEDS = [
         "url": "https://guiadoator.com.br/category/remunerados/feed/",
         "categoria_default": "Outros",
     },
-    # A Broadway é Aqui
+    # ── A Broadway é Aqui ─────────────────────────────────────────────────────
     {
         "nome": "A Broadway é Aqui",
         "url": "https://abroadwayeaqui.com.br/category/audicoes/feed/",
         "categoria_default": "Teatro",
     },
-    # Navio Cabaré
+    # ── Navio Cabaré ──────────────────────────────────────────────────────────
     {
         "nome": "Navio Cabaré",
         "url": "https://naviocabare.com.br/feed/",
+        "categoria_default": "Navios/Cruzeiros",
+    },
+    # ── Project Casting (EUA/Internacional) ───────────────────────────────────
+    {
+        "nome": "Project Casting",
+        "url": "https://projectcasting.com/feed/",
+        "categoria_default": "Audiovisual",
+    },
+    # ── Pesquisa de Elenco ────────────────────────────────────────────────────
+    {
+        "nome": "Pesquisa de Elenco",
+        "url": "https://pesquisadeelenco.com/feed/",
+        "categoria_default": "Outros",
+    },
+    # ── Marini Casting ────────────────────────────────────────────────────────
+    {
+        "nome": "Marini Casting",
+        "url": "https://marinicasting.com.br/feed/",
+        "categoria_default": "Audiovisual",
+    },
+    # ── Mesa de Booker ────────────────────────────────────────────────────────
+    {
+        "nome": "Mesa de Booker",
+        "url": "https://mesadebooker.com.br/feed/",
+        "categoria_default": "Outros",
+    },
+    # ── Orenda Casting ────────────────────────────────────────────────────────
+    {
+        "nome": "Orenda Casting",
+        "url": "https://orendacasting.com.br/feed/",
+        "categoria_default": "Audiovisual",
+    },
+    # ── Victoria Casting ──────────────────────────────────────────────────────
+    {
+        "nome": "Victoria Casting",
+        "url": "https://victoriacasting.com.br/feed/",
+        "categoria_default": "Audiovisual",
+    },
+    # ── Carla Lima Casting ────────────────────────────────────────────────────
+    {
+        "nome": "Carla Lima Casting",
+        "url": "https://carlalima.com.br/feed/",
+        "categoria_default": "Audiovisual",
+    },
+    # ── Personajes Brasil ─────────────────────────────────────────────────────
+    {
+        "nome": "Personajes Brasil",
+        "url": "https://personajesbr.com/feed/",
+        "categoria_default": "Outros",
+    },
+    # ── Erika Slama Casting ───────────────────────────────────────────────────
+    {
+        "nome": "Erika Slama Casting",
+        "url": "https://erikaslama.com.br/feed/",
+        "categoria_default": "Audiovisual",
+    },
+    # ── Ella Casting (Suécia/Internacional) ───────────────────────────────────
+    {
+        "nome": "Ella Casting",
+        "url": "https://ellacasting.se/feed/",
+        "categoria_default": "Outros",
+    },
+    # ── Nord Casting (Suécia/Internacional) ───────────────────────────────────
+    {
+        "nome": "Nord Casting",
+        "url": "https://www.nordcasting.se/feed/",
+        "categoria_default": "Outros",
+    },
+    # ── TLA Produções Artísticas ──────────────────────────────────────────────
+    {
+        "nome": "TLA Produções Artísticas",
+        "url": "https://tlaproducoesartisticas.com.br/feed/",
+        "categoria_default": "Teatro",
+    },
+    # ── YR Agenciamento ───────────────────────────────────────────────────────
+    {
+        "nome": "YR Agenciamento",
+        "url": "https://yolandarodriguesproducoes.com.br/feed/",
+        "categoria_default": "Audiovisual",
+    },
+    # ── Viktoria Talent (Internacional) ───────────────────────────────────────
+    {
+        "nome": "Viktoria Talent",
+        "url": "https://viktoriia.management/feed/",
         "categoria_default": "Navios/Cruzeiros",
     },
 ]
@@ -736,6 +820,134 @@ def _extrair_link_inscricao(conteudo: str, link_original: str) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# AUTODESCOBERTA DE NOVOS FEEDS RSS
+# ─────────────────────────────────────────────────────────────────────────────
+
+import json
+from pathlib import Path
+from urllib.parse import urlparse
+
+DATA_DIR = Path(__file__).parent.parent / "data"
+FEEDS_DESCOBERTOS_PATH = DATA_DIR / "feeds_descobertos.json"
+
+# Sites candidatos a monitorar (sem RSS confirmado ainda)
+# A função _verificar_rss_sites() testa estes periodicamente
+SITES_CANDIDATOS = [
+    {"nome": "Elenco da Raquel", "url": "https://www.elencodaraquel.com", "categoria_default": "Audiovisual"},
+    {"nome": "Ranieri Full Casting", "url": "https://ranierifullcasting.com.br", "categoria_default": "Audiovisual"},
+    {"nome": "No Ar Casting", "url": "http://noarcasting.com.br", "categoria_default": "Audiovisual"},
+    {"nome": "Avante Casting", "url": "https://www.avantecasting.com.br", "categoria_default": "Audiovisual"},
+    {"nome": "Army Casting", "url": "https://www.armycasting.com.br", "categoria_default": "Audiovisual"},
+    {"nome": "Attos Casting", "url": "https://attoscasting.com", "categoria_default": "Audiovisual"},
+    {"nome": "Agência Império", "url": "https://agenciaimperio.com.br", "categoria_default": "Audiovisual"},
+    {"nome": "Pearson Casting", "url": "https://www.pearsoncasting.com", "categoria_default": "Audiovisual"},
+    {"nome": "ME Casting", "url": "https://www.mecastingteam.me", "categoria_default": "Audiovisual"},
+    {"nome": "Anne Trevisan", "url": "https://www.annetrevisan.com", "categoria_default": "Audiovisual"},
+    {"nome": "Autêntica Prod", "url": "https://www.autenticaprod.com", "categoria_default": "Audiovisual"},
+    {"nome": "Mondiale Casting", "url": "http://agenciamondiale.com.br", "categoria_default": "Audiovisual"},
+    {"nome": "DEA Diretores", "url": "http://diretoresdeelenco.com.br", "categoria_default": "Audiovisual"},
+    {"nome": "SBT Elenco", "url": "https://elenco.tvsbt.com.br", "categoria_default": "Audiovisual"},
+    {"nome": "Royal Caribbean Entertainment", "url": "https://royalcaribbeanentertainment.com", "categoria_default": "Navios/Cruzeiros"},
+    {"nome": "NCLH Creative Studios", "url": "https://nclhcreativestudios.com", "categoria_default": "Navios/Cruzeiros"},
+    {"nome": "Celebrity Cruises Entertainment", "url": "https://www.celebritycruisesentertainment.com", "categoria_default": "Navios/Cruzeiros"},
+    {"nome": "Carnival Entertainment", "url": "https://www.carnivalentertainment.com", "categoria_default": "Navios/Cruzeiros"},
+    {"nome": "Backstage", "url": "https://www.backstage.com", "categoria_default": "Outros"},
+    {"nome": "Casting Brasil", "url": "https://castingbrasil.com.br", "categoria_default": "Outros"},
+    {"nome": "Open Auditions UK", "url": "https://www.openauditions.uk", "categoria_default": "Outros"},
+    {"nome": "Luz Casting", "url": "https://luzcasting.live", "categoria_default": "Audiovisual"},
+]
+
+RSS_SUFFIXES = ["/feed/", "/feed", "/rss/", "/rss", "/rss.xml", "/feed.xml", "/?feed=rss2"]
+
+
+def _carregar_feeds_descobertos() -> List[Dict]:
+    """Carrega feeds RSS descobertos automaticamente."""
+    if FEEDS_DESCOBERTOS_PATH.exists():
+        try:
+            with open(FEEDS_DESCOBERTOS_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return []
+
+
+def _salvar_feeds_descobertos(feeds: List[Dict]) -> None:
+    """Salva feeds RSS descobertos automaticamente."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with open(FEEDS_DESCOBERTOS_PATH, "w", encoding="utf-8") as f:
+        json.dump(feeds, f, ensure_ascii=False, indent=2)
+
+
+def _verificar_rss_sites() -> List[Dict]:
+    """
+    Verifica se algum dos SITES_CANDIDATOS passou a ter RSS.
+    Retorna lista de novos feeds encontrados.
+    Executa apenas uma vez por semana (controlado por timestamp no arquivo).
+    """
+    import datetime
+    import concurrent.futures
+
+    # Verificar se já rodou esta semana
+    timestamp_path = DATA_DIR / "rss_check_timestamp.txt"
+    if timestamp_path.exists():
+        try:
+            ts = datetime.date.fromisoformat(timestamp_path.read_text().strip())
+            if (datetime.date.today() - ts).days < 7:
+                logger.debug("Verificação de RSS candidatos: já executada esta semana, pulando.")
+                return []
+        except Exception:
+            pass
+
+    logger.info("Verificando novos RSS feeds em sites candidatos...")
+    feeds_existentes_urls = {f["url"] for f in RSS_FEEDS}
+    feeds_descobertos = _carregar_feeds_descobertos()
+    feeds_descobertos_urls = {f["url"] for f in feeds_descobertos}
+    todos_conhecidos = feeds_existentes_urls | feeds_descobertos_urls
+
+    novos_feeds = []
+
+    def checar_site(site):
+        parsed = urlparse(site["url"])
+        base = f"{parsed.scheme}://{parsed.netloc}"
+        for suffix in RSS_SUFFIXES:
+            url_rss = base + suffix
+            if url_rss in todos_conhecidos:
+                continue
+            try:
+                r = requests.get(url_rss, timeout=5, headers=HEADERS, allow_redirects=True)
+                if r.status_code == 200:
+                    ct = r.headers.get("content-type", "").lower()
+                    content = r.text[:300].lower()
+                    if any(x in ct for x in ["xml", "rss", "atom"]) or \
+                       any(x in content for x in ["<rss", "<feed", "<channel>", "<?xml"]):
+                        return {"nome": site["nome"], "url": url_rss, "categoria_default": site["categoria_default"]}
+            except Exception:
+                pass
+        return None
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as ex:
+        resultados = list(ex.map(checar_site, SITES_CANDIDATOS))
+
+    for r in resultados:
+        if r and r["url"] not in todos_conhecidos:
+            novos_feeds.append(r)
+            logger.info(f"  Novo RSS descoberto: {r['nome']} → {r['url']}")
+
+    if novos_feeds:
+        feeds_descobertos.extend(novos_feeds)
+        _salvar_feeds_descobertos(feeds_descobertos)
+        logger.info(f"  {len(novos_feeds)} novo(s) feed(s) RSS descoberto(s) e salvo(s)")
+    else:
+        logger.info("  Nenhum novo RSS encontrado nos candidatos")
+
+    # Atualizar timestamp
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    timestamp_path.write_text(str(datetime.date.today()))
+
+    return novos_feeds
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # FUNÇÃO PRINCIPAL
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -749,8 +961,28 @@ def buscar_casting() -> Tuple[List[Dict], List[str]]:
     ids_vistos: set = set()
     erros: List[str] = []
 
-    # 1. RSS Feeds (Guia do Ator + A Broadway é Aqui + Navio Cabaré)
-    logger.info("Buscando via RSS feeds...")
+    # 0. Autodescoberta semanal de novos RSS feeds em sites candidatos
+    try:
+        novos_rss = _verificar_rss_sites()
+        if novos_rss:
+            RSS_FEEDS.extend(novos_rss)
+            logger.info(f"  → {len(novos_rss)} novo(s) feed(s) RSS adicionado(s) dinamicamente")
+    except Exception as e:
+        logger.warning(f"Autodescoberta RSS: {str(e)[:100]}")
+
+    # 0b. Carregar feeds RSS descobertos anteriormente
+    try:
+        feeds_descobertos = _carregar_feeds_descobertos()
+        feeds_existentes_urls = {f["url"] for f in RSS_FEEDS}
+        for fd in feeds_descobertos:
+            if fd["url"] not in feeds_existentes_urls:
+                RSS_FEEDS.append(fd)
+                logger.debug(f"  Feed descoberto carregado: {fd['nome']}")
+    except Exception as e:
+        logger.warning(f"Carregamento de feeds descobertos: {str(e)[:100]}")
+
+    # 1. RSS Feeds (todas as fontes configuradas + descobertas)
+    logger.info(f"Buscando via RSS feeds ({len(RSS_FEEDS)} feeds)...")
     try:
         rss = _buscar_rss_feeds()
         logger.info(f"  → {len(rss)} oportunidades via RSS")
@@ -772,6 +1004,18 @@ def buscar_casting() -> Tuple[List[Dict], List[str]]:
                 todas.append(op)
     except Exception as e:
         erros.append(f"Elenco Digital: {str(e)[:100]}")
+
+    # 3. Autodescoberta de novos perfis de casting via Google (semanal)
+    try:
+        from autodescoberta import executar_autodescoberta
+        # Passa dicionário vazio pois os handles são gerenciados internamente
+        fontes_extras = executar_autodescoberta({})
+        if fontes_extras:
+            logger.info(f"  Autodescoberta: {len(fontes_extras)} perfis catalogados")
+    except ImportError:
+        logger.debug("Módulo autodescoberta não disponível")
+    except Exception as e:
+        logger.warning(f"Autodescoberta: {str(e)[:100]}")
 
     logger.info(f"Total de oportunidades após filtros: {len(todas)}")
     return todas, erros
