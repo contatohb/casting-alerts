@@ -428,7 +428,7 @@ RSS_FEEDS = [
 ]
 
 # Palavras-chave que identificam artigos editoriais/notícias (não são chamadas de elenco)
-# Usadas para filtrar feeds como Project Casting que misturam artigos com casting calls
+# Aplicado a TODAS as fontes para filtrar conteúdo não-oportunidade
 KW_EDITORIAL = re.compile(
     r"^(?:how\s+to|tips?\s+for|guide\s+to|best\s+\w+\s+for|top\s+\d+|"  
     r"what\s+is|why\s+you|when\s+to|where\s+to|the\s+best|"  
@@ -440,7 +440,20 @@ KW_EDITORIAL = re.compile(
     re.IGNORECASE,
 )
 
-# Fontes que publicam artigos editoriais misturados com casting calls
+# Palavras-chave editoriais em português (para fontes brasileiras)
+KW_EDITORIAL_PT = re.compile(
+    r"^(?:como\s+(?:se\s+)?(?:preparar|fazer|ser|tornar|melhorar|conseguir)|"  
+    r"dicas?\s+(?:para|de)|guia\s+(?:para|de|completo)|"  
+    r"\d+\s+(?:dicas?|maneiras?|formas?|passos?|erros?|segredos?|motivos?)|"  
+    r"tudo\s+(?:sobre|que\s+você)|o\s+que\s+(?:é|são|fazer)|"  
+    r"por\s+que\s+(?:você|todo)|quando\s+(?:você|é\s+hora)|"  
+    r"notícias?\s+do\s+(?:teatro|cinema|mercado)|"  
+    r"entrevista\s+(?:com|exclusiva)|perfil\s+de\s+(?:ator|atriz|artista)|"  
+    r"conheça\s+|descubra\s+|saiba\s+(?:mais|como|tudo))",
+    re.IGNORECASE,
+)
+
+# Fontes que exigem filtro mais rigoroso (publicam artigos misturados com casting calls)
 FONTES_COM_EDITORIAL = {"Project Casting", "Backstage"}
 
 # Categorias a excluir do Guia do Ator (não são oportunidades de casting)
@@ -469,10 +482,12 @@ def _processar_item_rss(item: ET.Element, fonte: str, categoria_default: str) ->
             if not KW_OPORTUNIDADE.search(title):
                 return None
 
-    # Filtrar artigos editoriais de fontes que misturam conteúdo
+    # Filtrar artigos editoriais — KW_EDITORIAL (EN) e KW_EDITORIAL_PT (PT) aplicados a TODAS as fontes
+    if KW_EDITORIAL.search(titulo) or KW_EDITORIAL_PT.search(titulo):
+        return None
+
+    # Para fontes com alto volume editorial: exigir indicadores mais fortes de casting call
     if fonte in FONTES_COM_EDITORIAL:
-        if KW_EDITORIAL.search(title):
-            return None
         # Para Project Casting: exigir indicadores mais fortes de casting call
         if fonte == "Project Casting":
             # Deve ter palavras de ação direta no título ou na descrição
@@ -488,7 +503,7 @@ def _processar_item_rss(item: ET.Element, fonte: str, categoria_default: str) ->
             if not kw_acao.search(f"{title} {desc}"):
                 return None
 
-    # Verificar se é uma oportunidade real
+    # Verificar se é uma oportunidade real (KW_OPORTUNIDADE aplicado a todas as fontes)
     texto_completo = f"{title} {desc}"
     if not KW_OPORTUNIDADE.search(texto_completo):
         return None
