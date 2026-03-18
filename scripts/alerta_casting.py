@@ -125,7 +125,6 @@ def main():
     warnings.filterwarnings("ignore")
 
     force_send = "--force-send" in sys.argv
-    no_enrich = "--no-enrich" in sys.argv
 
     today = date.today()
     logger.info(f"Alerta de casting — {today.isoformat()}")
@@ -143,10 +142,7 @@ def main():
 
     # Buscar oportunidades
     logger.info("Buscando oportunidades de casting...")
-    oportunidades, erros = buscar_casting(
-        enriquecer_detalhes=not no_enrich,
-        max_enriquecimento=30,
-    )
+    oportunidades, erros = buscar_casting()
     logger.info(f"Oportunidades filtradas: {len(oportunidades)}")
 
     # Carregar histórico e filtrar novas

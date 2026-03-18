@@ -33,7 +33,7 @@ jobs:
           GMAIL_SENDER: huddsong@gmail.com
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
         run: |
-          cd scripts && python alerta_casting.py --force-send
+          cd scripts && python alerta_casting.py
 
       - name: Commit updated seen history
         run: |
