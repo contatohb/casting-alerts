@@ -375,18 +375,42 @@ def _extrair_aparencia(texto: str) -> Optional[Tuple[Optional[int], Optional[int
 
 
 def _atende_criterios_genero(texto_genero: str) -> bool:
-    """Verifica se o gênero atende aos critérios (homem)."""
+    """
+    Verifica se o gênero atende aos critérios (homem ou não especificado).
+
+    Regras:
+    - Campo vazio ou ausente: incluir (não especificado)
+    - "Não especificado", "qualquer", "ambos", "todos": incluir
+    - "Homem", "masculino": incluir
+    - "Mulher", "feminino", "atriz" (sem mencionar homem): excluir
+    - "Homens e mulheres" / "ambos os sexos": incluir (aberto para homens também)
+    """
     if not texto_genero:
         return True  # Não especificado = incluir
-    
+
     texto_lower = texto_genero.lower().strip()
-    
-    # Excluir explicitamente mulher/feminino
-    if any(x in texto_lower for x in ["mulher", "feminino", "f", "atriz", "atrice"]):
+
+    # Aceitar imediatamente se for explicitamente não especificado / aberto
+    GENEROS_INCLUSIVOS = [
+        "não especificado", "nao especificado", "qualquer", "ambos",
+        "todos", "aberto", "qualquer perfil", "qualquer gênero",
+        "homens e mulheres", "mulheres e homens",
+        "ambos os sexos", "todos os gêneros",
+    ]
+    if any(x in texto_lower for x in GENEROS_INCLUSIVOS):
+        return True
+
+    # Aceitar se mencionar homem/masculino
+    if any(x in texto_lower for x in ["homem", "masculino", "ator", "m ", "m,"]):
+        return True
+
+    # Excluir apenas se for EXCLUSIVAMENTE feminino (sem menção a homem)
+    GENEROS_FEMININOS_EXCLUSIVOS = ["mulher", "feminino", "atriz", "atrice"]
+    if any(x in texto_lower for x in GENEROS_FEMININOS_EXCLUSIVOS):
         return False
-    
-    # Incluir homem, masculino, não especificado, qualquer, ambos
-    return any(x in texto_lower for x in GENEROS_ALVO) or "não" in texto_lower
+
+    # Qualquer outro valor não reconhecido: incluir por precaução
+    return True
 
 
 def _atende_criterios_idade_aparencia(oportunidade: Dict) -> bool:
