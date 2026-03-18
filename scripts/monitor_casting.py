@@ -384,7 +384,7 @@ def _processar_item_rss(item: ET.Element, fonte: str, categoria_default: str) ->
         pr = requests.get(link, timeout=6, headers=HEADERS)
         soup_post = BeautifulSoup(pr.content, "html.parser")
         # Tentar diferentes seletores para o conteúdo principal
-        for sel in ["div.entry-content", "div.post-content", "article", "div.content"]:
+        for sel in ["div.td-post-content", "div.entry-content", "div.post-content", "div.content"]:
             entry = soup_post.select_one(sel)
             if entry:
                 conteudo = entry.get_text(separator="\n", strip=True)
@@ -613,9 +613,15 @@ def _detectar_genero(conteudo: str) -> str:
 
 
 def _detectar_faixa_etaria(conteudo: str) -> str:
+    # Padrão "Entre X e Y anos" (muito comum em português)
+    fa_m0 = re.search(r"[Ee]ntre\s+(\d{1,2})\s+e\s+(\d{1,2})\s+anos?", conteudo, re.IGNORECASE)
+    if fa_m0:
+        return f"{fa_m0.group(1)} - {fa_m0.group(2)}"
+    # Padrão "X a Y anos" ou "X-Y anos"
     fa_m = re.search(r"(\d{1,2})\s*(?:a|ao?|[-–])\s*(\d{1,2})\s*anos?", conteudo, re.IGNORECASE)
     if fa_m:
         return f"{fa_m.group(1)} - {fa_m.group(2)}"
+    # Padrão "a partir de X anos" ou "acima de X anos"
     fa_m2 = re.search(r"(?:a partir|acima|mais)\s+de\s+(\d{1,2})\s*anos?", conteudo, re.IGNORECASE)
     if fa_m2:
         return f"A partir de {fa_m2.group(1)}"
@@ -683,19 +689,32 @@ def _extrair_o_que_levar(conteudo: str) -> str:
 
 
 def _extrair_local(conteudo: str) -> str:
+    # Buscar "Local: ..." ou "Endereço: ..." mas excluir "endereço de e-mail"
     m = re.search(
-        r"(?:local|endere[çc]o|local\s+do\s+teste|local\s+da\s+audi[çc][aã]o)[:\s]+([^\n.]{10,150})",
+        r"(?:local|endere[çc]o)\s+(?:do\s+teste|da\s+audi[çc][aã]o|da\s+sele[çc][aã]o)[:\s]+([^\n.]{10,150})",
         conteudo, re.IGNORECASE
     )
     if m:
         return m.group(1).strip()
-    # Buscar endereço direto
+    # Buscar "Local:" ou "Endereço:" seguido de endereço físico (não de e-mail)
     m2 = re.search(
+        r"(?:^|\n)(?:local|endere[çc]o)[:\s]+([^\n.]{10,150})",
+        conteudo, re.IGNORECASE | re.MULTILINE
+    )
+    if m2:
+        val = m2.group(1).strip()
+        # Excluir se capturou texto de formulário de comentários
+        if any(x in val.lower() for x in ["e-mail", "email", "incorreto", "digite seu", "por favor"]):
+            pass  # Ignorar
+        else:
+            return val
+    # Buscar endereço físico direto
+    m3 = re.search(
         r"(?:Rua|Avenida|Av\.|Praça|Alameda|Travessa)\s+[^,\n]+(?:,\s*n[º°]?\s*\d+)?(?:,\s*[^,\n]+)?",
         conteudo, re.IGNORECASE
     )
-    if m2:
-        return m2.group(0).strip()
+    if m3:
+        return m3.group(0).strip()
     return ""
 
 
