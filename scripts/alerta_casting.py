@@ -3,7 +3,7 @@
 Alerta diário de novas oportunidades de casting.
 
 Executa o monitor_casting.py, filtra apenas oportunidades NOVAS
-(não alertadas antes) e envia email detalhado via Gmail MCP.
+(não alertadas antes) e envia email HTML premium via SMTP.
 
 Uso:
     python3 alerta_casting.py [--force-send] [--no-enrich]
@@ -69,9 +69,9 @@ GMAIL_SENDER = os.getenv("GMAIL_SENDER", "huddsong@gmail.com")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "")
 
 
-def send_email(subject: str, body: str, recipient: str) -> bool:
+def send_email(subject: str, body_html: str, body_text: str, recipient: str) -> bool:
     """
-    Envia email via SMTP usando Gmail com App Password.
+    Envia email multipart (HTML + texto puro) via SMTP usando Gmail com App Password.
     Requer a variável de ambiente GMAIL_APP_PASSWORD configurada.
     """
     import smtplib
@@ -88,17 +88,12 @@ def send_email(subject: str, body: str, recipient: str) -> bool:
         msg["From"] = GMAIL_SENDER
         msg["To"] = recipient
 
-        # Corpo em texto puro
-        part_text = MIMEText(body, "plain", "utf-8")
+        # Parte texto puro (fallback)
+        part_text = MIMEText(body_text, "plain", "utf-8")
         msg.attach(part_text)
 
-        # Corpo em HTML (converte quebras de linha e preserva formatação)
-        html_body = (
-            "<html><body><pre style='font-family:monospace;font-size:13px;'>"
-            + body.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            + "</pre></body></html>"
-        )
-        part_html = MIMEText(html_body, "html", "utf-8")
+        # Parte HTML (preferencial — clientes modernos usam esta)
+        part_html = MIMEText(body_html, "html", "utf-8")
         msg.attach(part_html)
 
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
@@ -129,15 +124,16 @@ def main():
     today = date.today()
     logger.info(f"Alerta de casting — {today.isoformat()}")
 
-    # Importar módulo de casting
+    # Importar módulos
     try:
         from monitor_casting import (
             buscar_casting,
             filtrar_novas_oportunidades,
             formatar_email_casting,
         )
+        from email_template import gerar_email_html, gerar_email_texto
     except ImportError as e:
-        logger.error(f"Erro ao importar monitor_casting: {e}")
+        logger.error(f"Erro ao importar módulos: {e}")
         return 1
 
     # Buscar oportunidades
@@ -153,9 +149,12 @@ def main():
     # Salvar histórico atualizado
     save_seen(seen_atualizado, SEEN_PATH)
 
-    # Gerar relatório
-    corpo = formatar_email_casting(novas, erros)
-    print(corpo)
+    # Gerar corpo do email (HTML + texto puro)
+    corpo_html = gerar_email_html(novas, erros)
+    corpo_texto = gerar_email_texto(novas, erros)
+
+    # Imprimir versão texto no log para debug
+    print(corpo_texto)
 
     # Definir assunto
     if novas:
@@ -165,7 +164,7 @@ def main():
 
     # Enviar email se há novidades ou se forçado
     if novas or force_send:
-        ok = send_email(assunto, corpo, RECIPIENT)
+        ok = send_email(assunto, corpo_html, corpo_texto, RECIPIENT)
         return 0 if ok else 1
     else:
         logger.info("Sem novidades — email não enviado (use --force-send para forçar)")
