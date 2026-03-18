@@ -427,6 +427,22 @@ RSS_FEEDS = [
     },
 ]
 
+# Palavras-chave que identificam artigos editoriais/notícias (não são chamadas de elenco)
+# Usadas para filtrar feeds como Project Casting que misturam artigos com casting calls
+KW_EDITORIAL = re.compile(
+    r"^(?:how\s+to|tips?\s+for|guide\s+to|best\s+\w+\s+for|top\s+\d+|"  
+    r"what\s+is|why\s+you|when\s+to|where\s+to|the\s+best|"  
+    r"\d+\s+(?:tips?|ways?|reasons?|things?|steps?|secrets?|mistakes?)|"  
+    r"industry\s+news|actor\s+news|casting\s+news|entertainment\s+news|"  
+    r"how\s+actors?|acting\s+tips?|acting\s+advice|career\s+advice|"  
+    r"resume\s+tips?|headshot\s+tips?|audition\s+tips?|"  
+    r"everything\s+you\s+need|what\s+you\s+need|all\s+you\s+need)",
+    re.IGNORECASE,
+)
+
+# Fontes que publicam artigos editoriais misturados com casting calls
+FONTES_COM_EDITORIAL = {"Project Casting", "Backstage"}
+
 # Categorias a excluir do Guia do Ator (não são oportunidades de casting)
 CATS_EXCLUIR_GDA = {
     "cursos", "curso", "workshop", "notícias", "noticias",
@@ -451,6 +467,25 @@ def _processar_item_rss(item: ET.Element, fonte: str, categoria_default: str) ->
     if fonte == "Guia do Ator":
         if any(c in CATS_EXCLUIR_GDA for c in cats):
             if not KW_OPORTUNIDADE.search(title):
+                return None
+
+    # Filtrar artigos editoriais de fontes que misturam conteúdo
+    if fonte in FONTES_COM_EDITORIAL:
+        if KW_EDITORIAL.search(title):
+            return None
+        # Para Project Casting: exigir indicadores mais fortes de casting call
+        if fonte == "Project Casting":
+            # Deve ter palavras de ação direta no título ou na descrição
+            kw_acao = re.compile(
+                r"\b(casting\s+call|open\s+call|open\s+audition|audition\s+notice|"  
+                r"now\s+casting|seeking\s+\w|looking\s+for\s+\w|"  
+                r"paid\s+(?:acting|casting|role)|background\s+(?:actors?|extras?)|"  
+                r"actors?\s+needed|talent\s+needed|submit\s+(?:now|today|here)|"  
+                r"apply\s+(?:now|today|here)|deadline|submissions?\s+(?:open|due)|"  
+                r"role[s]?\s+available|\bextras?\b|\bbackground\b)\b",
+                re.IGNORECASE,
+            )
+            if not kw_acao.search(f"{title} {desc}"):
                 return None
 
     # Verificar se é uma oportunidade real
@@ -712,6 +747,117 @@ def _detectar_faixa_etaria(conteudo: str) -> str:
     return ""
 
 
+# Mapeamento de meses para normalização de datas
+_MESES_PT = {
+    "janeiro": "01", "fevereiro": "02", "março": "03", "marco": "03",
+    "abril": "04", "maio": "05", "junho": "06",
+    "julho": "07", "agosto": "08", "setembro": "09",
+    "outubro": "10", "novembro": "11", "dezembro": "12",
+    "jan": "01", "fev": "02", "mar": "03", "abr": "04",
+    "mai": "05", "jun": "06", "jul": "07", "ago": "08",
+    "set": "09", "out": "10", "nov": "11", "dez": "12",
+}
+_MESES_EN = {
+    "january": "01", "february": "02", "march": "03", "april": "04",
+    "may": "05", "june": "06", "july": "07", "august": "08",
+    "september": "09", "october": "10", "november": "11", "december": "12",
+    "jan": "01", "feb": "02", "mar": "03", "apr": "04",
+    "jun": "06", "jul": "07", "aug": "08",
+    "sep": "09", "oct": "10", "nov": "11", "dec": "12",
+}
+
+
+def _normalizar_data(texto: str) -> str:
+    """
+    Converte qualquer representação de data para dd/mm/aaaa.
+    Retorna o texto original se não conseguir normalizar.
+    """
+    if not texto:
+        return ""
+    texto = texto.strip()
+    import datetime
+    ano_atual = datetime.date.today().year
+
+    # Já está no formato dd/mm/aaaa
+    m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", texto)
+    if m:
+        return f"{int(m.group(1)):02d}/{int(m.group(2)):02d}/{m.group(3)}"
+
+    # Formato dd/mm/aa (ano com 2 dígitos)
+    m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{2})$", texto)
+    if m:
+        ano = int(m.group(3))
+        ano_full = 2000 + ano if ano < 50 else 1900 + ano
+        return f"{int(m.group(1)):02d}/{int(m.group(2)):02d}/{ano_full}"
+
+    # Formato dd/mm (sem ano)
+    m = re.match(r"^(\d{1,2})/(\d{1,2})$", texto)
+    if m:
+        return f"{int(m.group(1)):02d}/{int(m.group(2)):02d}/{ano_atual}"
+
+    # Formato dd-mm-aaaa ou dd-mm-aa
+    m = re.match(r"^(\d{1,2})-(\d{1,2})-(\d{2,4})$", texto)
+    if m:
+        ano = int(m.group(3))
+        if ano < 100:
+            ano = 2000 + ano if ano < 50 else 1900 + ano
+        return f"{int(m.group(1)):02d}/{int(m.group(2)):02d}/{ano}"
+
+    # Formato americano mm/dd/aaaa (detectado quando mês > 12 seria inválido)
+    m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", texto)
+    if m:
+        mes, dia, ano = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if mes > 12 and dia <= 12:  # Provavelmente mm/dd
+            return f"{dia:02d}/{mes:02d}/{ano}"
+
+    # Formato "DD de Mês" ou "DD de Mês de AAAA" (português)
+    m = re.match(
+        r"^(\d{1,2})\s+de\s+([a-záàâãéêíóôõúç]+)(?:\s+de\s+(\d{4}))?$",
+        texto, re.IGNORECASE
+    )
+    if m:
+        dia = int(m.group(1))
+        mes_nome = m.group(2).lower()
+        ano = int(m.group(3)) if m.group(3) else ano_atual
+        mes_num = _MESES_PT.get(mes_nome)
+        if mes_num:
+            return f"{dia:02d}/{mes_num}/{ano}"
+
+    # Formato "Mês DD, AAAA" ou "Mês DD AAAA" (inglês)
+    m = re.match(
+        r"^([a-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?[,\s]+(\d{4})$",
+        texto, re.IGNORECASE
+    )
+    if m:
+        mes_nome = m.group(1).lower()
+        dia = int(m.group(2))
+        ano = int(m.group(3))
+        mes_num = _MESES_EN.get(mes_nome)
+        if mes_num:
+            return f"{dia:02d}/{mes_num}/{ano}"
+
+    # Formato "DD Mês AAAA" (inglês sem vírgula)
+    m = re.match(
+        r"^(\d{1,2})\s+([a-z]+)\s+(\d{4})$",
+        texto, re.IGNORECASE
+    )
+    if m:
+        dia = int(m.group(1))
+        mes_nome = m.group(2).lower()
+        ano = int(m.group(3))
+        mes_num = _MESES_EN.get(mes_nome) or _MESES_PT.get(mes_nome)
+        if mes_num:
+            return f"{dia:02d}/{mes_num}/{ano}"
+
+    # Formato ISO aaaa-mm-dd
+    m = re.match(r"^(\d{4})-(\d{1,2})-(\d{1,2})$", texto)
+    if m:
+        return f"{int(m.group(3)):02d}/{int(m.group(2)):02d}/{m.group(1)}"
+
+    # Não foi possível normalizar: retornar original
+    return texto
+
+
 def _extrair_data_inscricao(conteudo: str) -> str:
     for pat in [
         r"inscri[çc][õo]es?\s+at[eé]\s+([\d/]+(?:\s+de\s+\w+(?:\s+de\s+\d{4})?)?)",
@@ -722,7 +868,7 @@ def _extrair_data_inscricao(conteudo: str) -> str:
     ]:
         m = re.search(pat, conteudo, re.IGNORECASE)
         if m:
-            return m.group(1).strip()
+            return _normalizar_data(m.group(1).strip())
     return ""
 
 
@@ -734,7 +880,7 @@ def _extrair_data_teste(conteudo: str) -> str:
     ]:
         m = re.search(pat, conteudo, re.IGNORECASE)
         if m:
-            return m.group(1).strip()
+            return _normalizar_data(m.group(1).strip())
     return ""
 
 
