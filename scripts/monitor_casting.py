@@ -1,34 +1,22 @@
-#!/usr/bin/env python3
 """
-Monitor de oportunidades de casting, audições e seleções de elenco.
+monitor_casting.py — Coleta e filtragem de oportunidades de casting/audições.
 
-Critérios de alerta:
-  - Gênero: Homem
-  - Idade: Acima de 40 anos OU aparência entre 35-50 anos OU não especificado
+Arquitetura:
+  1. RSS Feeds (fontes primárias — confiáveis, sem bloqueio)
+  2. Scraping estruturado de páginas que permitem acesso direto
+  3. Filtros: gênero (homem), idade (40+ ou aparência 35-50 ou n/e), etnia
 
-Fontes:
-  - Guia do Ator (guiadoator.com.br)
-  - Elenco Digital (elencdigital.com.br)
-  - Oppah (oppah.com.br)
-  - Nossa Senhora do Casting (nossasenhora.com.br)
-  - Castapp (castapp.com.br)
-  - Open Auditions (openauditions.com)
-  - Rede Globo (globo.com)
-  - Rede Record (record.com.br)
-  - Páginas/perfis com "casting" ou "elenco" no nome
-
-Cada oportunidade retornada contém:
-  titulo, descricao, genero, idade_minima, idade_maxima, aparencia,
-  data_inscricao_inicio, data_inscricao_fim, data_teste, data_gravacao,
-  cache, o_que_levar, endereco, link_inscricao, link_formulario, email_contato,
-  categoria (teatro, audiovisual, navios, resorts, etc), localizacao,
-  link_detalhe, fonte
+Perfil do usuário:
+  - Homem, branco/caucasiano, descendente de italiano
+  - Fala: português, inglês e espanhol
+  - Faixa etária: acima de 40 anos (ou aparência 35-50)
 """
-from __future__ import annotations
 
+import html
 import logging
 import re
 import time
+import xml.etree.ElementTree as ET
 from typing import Dict, List, Optional, Tuple
 
 import requests
@@ -37,1214 +25,861 @@ from bs4 import BeautifulSoup
 logger = logging.getLogger(__name__)
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                  "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                  "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
 }
-TIMEOUT = 20
-SLEEP = 0.4
+TIMEOUT = 10
 
-# ─────────────────────────────────────────────────────────────────
-# Critérios de filtro
-# ─────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# CONSTANTES DE FILTRAGEM
+# ─────────────────────────────────────────────────────────────────────────────
 
-GENEROS_ALVO = ["homem", "masculino", "m", "não especificado", "qualquer", "ambos"]
-IDADE_MINIMA_ALVO = 40
-APARENCIA_MINIMA = 35
-APARENCIA_MAXIMA = 50
+# Palavras que indicam que o anúncio é uma oportunidade real de casting
+KW_OPORTUNIDADE = re.compile(
+    r"\b(sele[çc][aã]o|audi[çc][aã]o|casting|teste[s]?|vaga[s]?|"
+    r"inscri[çc][õo]es?\s+abertas?|elenco\s+aberto|chamada\s+de\s+elenco|"
+    r"open\s+call|open\s+audition|casting\s+call|"
+    r"procuramos?|buscamos?|selecionamos?|contratamos?)\b",
+    re.IGNORECASE,
+)
 
-# ─────────────────────────────────────────────────────────────────
-# Filtro étnico/racial — excluir seleções EXCLUSIVAS para grupos incompatíveis
-# ─────────────────────────────────────────────────────────────────
-# Termos que, quando associados a exclusividade, indicam que a seleção
-# é restrita a um grupo étnico/racial incompatível com o perfil do usuário
-# (homem branco, descendente de italiano, brasileiro).
-ETNIAS_EXCLUSIVAS_EXCLUIR = [
-    # Raça/cor explícita
-    "negro", "negra", "negros", "negras",
-    "preto", "preta", "pretos", "pretas",
-    "pardo", "parda", "pardos", "pardas",
-    "afrodescendente", "afro-descendente", "afrobrasileiro",
-    "afro-brasileiro", "afro brasileiro",
-    "oriental", "orientais", "asiático", "asiática", "asiáticos",
-    "indígena", "indígenas", "indigena", "indigenas",
-    "quilombola", "quilombolas",
-    # Termos em inglês
-    "black", "african american", "afro-american",
-    "asian", "indigenous", "native",
-    # Termos de diversidade racial exclusiva
-    "pessoas negras", "artistas negros", "atores negros",
-    "cantores negros", "performers negros",
-]
+# Termos étnicos incompatíveis com o perfil do usuário
+ETNIAS_INCOMPATIVEIS = re.compile(
+    r"\b(negr[oa]s?|pret[oa]s?|pard[oa]s?|afrodescendente[s]?|"
+    r"afro-descendente[s]?|afrobrasileiro[s]?|afro-brasileiro[s]?|"
+    r"oriental[is]?|asian[s]?|asiátic[oa]s?|japonês|japonesa|"
+    r"chinês|chinesa|coreano[s]?|indígena[s]?|indio[s]?|índio[s]?|"
+    r"quilombola[s]?|melanodérmico[s]?)\b",
+    re.IGNORECASE,
+)
 
-# Modificadores de exclusividade — a etnia só exclui quando acompanhada
-# de um desses termos, indicando restrição (não mera menção).
-# IMPORTANTE: evitar termos genéricos como "para" isolado para não gerar falsos positivos.
-MODIFICADORES_EXCLUSIVIDADE = [
-    "exclusiv",          # exclusivo, exclusivamente, exclusiva
-    "somente",
-    "apenas",
-    "só para",           # "só para negros" (não "só" isolado)
-    "restrit",           # restrito, restrita, restritos
-    "destinad",          # destinado, destinada
-    "voltad",            # voltado, voltada
-    "prioritari",        # prioritariamente
-    "obrigatoriamente",
-    "unicamente",
-    "only",
-    "exclusively",
-    "restricted to",
-    "vagas para",
-    "oportunidade para",
-    "seleção para",
-    "casting para",
-    "procuramos",        # "procuramos atores negros"
-    "buscamos",          # "buscamos cantores negros"
-    "procura-se",
-    "busca-se",
-    "vaga para",
-    "aberto para",       # "casting aberto para negros" (exclusivo)
-    "direcionad",        # direcionado, direcionada
-]
+# Modificadores que indicam exclusividade
+MODIFICADORES_EXCLUSIVOS = re.compile(
+    r"\b(somente|apenas|exclusivamente|exclusivo\s+para|"
+    r"s[oó]\s+para|destinad[oa]\s+a[os]?|"
+    r"vagas?\s+para|buscamos?\s+[a-z\s]{0,20}?(negr|pret|pard|oriental|indígena|quilombola)|"
+    r"selecionamos?\s+[a-z\s]{0,20}?(negr|pret|pard|oriental|indígena|quilombola))\b",
+    re.IGNORECASE,
+)
 
+# Contra-indicadores: quando a lista inclui brancos/caucasianos, não é exclusivo
+CONTRA_INDICADORES = re.compile(
+    r"\b(todos\s+os\s+perfis?|diversidade|inclus[aã]o|"
+    r"independente\s+de\s+etnia|qualquer\s+etnia|"
+    r"brancos?\s+e\s+negros?|negros?\s+e\s+brancos?|"
+    r"caucasian[oa]s?\s+e|e\s+caucasian[oa]s?|"
+    r"brancos?\s+e|e\s+brancos?)\b",
+    re.IGNORECASE,
+)
 
-# Termos que, quando presentes na janela, ANULAM a exclusividade
-# (indicam que a seleção é inclusiva, não exclusiva).
-# Nota: listas de etnias só são inclusivas quando incluem "brancos" ou "caucasianos".
-CONTRA_EXCLUSIVIDADE = [
-    "todos", "todas", "qualquer", "qualquer perfil", "todos os perfis",
-    "aberto a todos", "aberto para todos", "sem restrição",
-    "independente", "independentemente",
-    "inclusive", "inclusão", "inclusivo", "inclusiva",
-    "e brancos",        # lista que inclui brancos = inclusivo para o usuário
-    "brancos e",        # idem
-    "caucasianos",      # menciona caucasianos na lista
-    "anyone", "everyone", "all backgrounds", "all ethnicities",
-    "todas as etnias", "todas as raças", "qualquer etnia",
-]
+# Categorias por palavras-chave
+CAT_KEYWORDS = {
+    "Teatro": re.compile(
+        r"\b(teatro|musical|peça|espetáculo|ópera|opereta|circo|palco|"
+        r"broadway|off-broadway|temporada|dramaturgia|comédia\s+musical)\b",
+        re.IGNORECASE,
+    ),
+    "Audiovisual": re.compile(
+        r"\b(filme|cinema|série|novela|minissérie|comercial|publicidade|"
+        r"propaganda|clipe|videoclipe|curta|longa|documentário|"
+        r"streaming|netflix|amazon|globoplay|hbo|disney|paramount|"
+        r"tv|televisão|emissora|gravação|audiovisual)\b",
+        re.IGNORECASE,
+    ),
+    "Navios/Cruzeiros": re.compile(
+        r"\b(navio|cruzeiro|cruise\s*ship|embarcação|bordo|"
+        r"msc|royal\s*caribbean|carnival|norwegian|celebrity|"
+        r"costa\s*cruises|princess|disney\s*cruise|holland\s*america|"
+        r"cunard|viking|p&o|entertainment\s*at\s*sea)\b",
+        re.IGNORECASE,
+    ),
+    "Resorts/Hotéis": re.compile(
+        r"\b(resort|hotel|parque\s+temático|theme\s+park|spa|"
+        r"entretenimento\s+hoteleiro|animação\s+cultural)\b",
+        re.IGNORECASE,
+    ),
+}
 
 
-def _excluir_por_etnia(texto: str) -> bool:
-    """
-    Retorna True se a oportunidade deve ser EXCLUÍDA por ser
-    exclusivamente destinada a uma etnia/raça incompatível com o perfil
-    do usuário (homem branco, descendente de italiano, brasileiro).
-
-    A exclusão só ocorre quando há combinação de:
-    - Termo de etnia incompatível
-    - Modificador de exclusividade (somente, apenas, exclusivo, etc.)
-    - E NÃO há contra-indicadores de inclusividade (todos, diversidade, etc.)
-
-    Seleções que mencionam diversidade sem exclusividade são mantidas.
-    """
-    if not texto:
-        return False
-
-    t = texto.lower()
-
-    # Verificar cada etnia incompatível
-    for etnia in ETNIAS_EXCLUSIVAS_EXCLUIR:
-        if etnia not in t:
-            continue
-        # Verificar se há modificador de exclusividade próximo (janela de 150 chars)
-        idx = t.find(etnia)
-        janela_inicio = max(0, idx - 150)
-        janela_fim = min(len(t), idx + len(etnia) + 150)
-        janela = t[janela_inicio:janela_fim]
-
-        # Verificar se há contra-indicador de inclusividade na janela
-        if any(contra in janela for contra in CONTRA_EXCLUSIVIDADE):
-            continue  # É inclusivo, não excluir
-
-        if any(mod in janela for mod in MODIFICADORES_EXCLUSIVIDADE):
-            return True  # Exclusão confirmada
-
-    return False  # Manter a oportunidade
+def _inferir_categoria(titulo: str, conteudo: str) -> str:
+    texto = f"{titulo} {conteudo}"
+    for cat, pattern in CAT_KEYWORDS.items():
+        if pattern.search(texto):
+            return cat
+    return "Outros"
 
 
-def _extrair_perfil_completo(texto: str) -> str:
-    """
-    Extrai e consolida o detalhamento completo do perfil procurado:
-    etnia, idioma, tipo físico, habilidades, experiência, características
-    especiais e quaisquer outros requisitos mencionados na oportunidade.
+def _atende_criterios_genero(genero: str, conteudo: str) -> bool:
+    """Retorna True se a oportunidade é para homens ou não especifica gênero."""
+    g = genero.lower()
+    tc = conteudo.lower()
 
-    Retorna uma string formatada com os itens encontrados,
-    ou string vazia se nenhum detalhe for identificado.
-    """
-    if not texto:
-        return ""
-
-    t = texto.lower()
-    itens = []
-
-    # ── Etnia / Cor ──
-    etnias_mencoes = [
-        ("branco", "Branco/Caucasiano"),
-        ("caucasiano", "Caucasiano"),
-        ("europeu", "Europeu"),
-        ("italiano", "Italiano/Descendente"),
-        ("latino", "Latino"),
-        ("hispânico", "Hispânico"),
-        ("negro", "Negro"),
-        ("preto", "Preto"),
-        ("pardo", "Pardo"),
-        ("oriental", "Oriental/Asiático"),
-        ("asiático", "Asiático"),
-        ("indígena", "Indígena"),
-        ("indigena", "Indígena"),
-        ("afrodescendente", "Afrodescendente"),
-        ("mestiço", "Mestiço"),
+    # Padrões de exclusão no título/conteúdo
+    # Feminino exclusivo no título ou conteúdo
+    padroes_femininos_exclusivos = [
+        r"\bfutebol\s+feminino\b",
+        r"\bsele[cç][aã]o\s+de\s+atrizes?\b",
+        r"\bcasting\s+feminino\b",
+        r"\bapenas\s+mulheres?\b",
+        r"\bsomente\s+mulheres?\b",
+        r"\bexclusivo\s+para\s+mulheres?\b",
     ]
-    for termo, label in etnias_mencoes:
-        if termo in t:
-            itens.append(f"Etnia/Cor: {label}")
-            break  # Apenas o primeiro match por categoria
+    for pat in padroes_femininos_exclusivos:
+        if re.search(pat, tc):
+            return False
 
-    # ── Idioma ──
-    idiomas = [
-        (r'ingl[eê]s', "Inglês"),
-        (r'espanhol', "Espanhol"),
-        (r'portugu[eê]s', "Português"),
-        (r'italiano', "Italiano"),
-        (r'franc[eê]s', "Francês"),
-        (r'alem[ãa]o', "Alemão"),
-        (r'mandar[ií]m|chin[eê]s', "Mandarim/Chinês"),
-        (r'japon[eê]s', "Japonês"),
-        (r'bilíngue|bilingue', "Bilíngue"),
-        (r'fluente', "Fluência exigida"),
+    # Verificar "cantora(s)" sem "cantor" masculino
+    if re.search(r"\bcantora[s]?\b", tc):
+        if not re.search(r"\bcantores?\b", tc):  # Não há "cantor" ou "cantores" masculino
+            return False
+
+    # Padrões de exclusão por faixa etária infantil/juvenil no título
+    padroes_infantis = [
+        r"\bmenino[s]?\b",
+        r"\bmenina[s]?\b",
+        r"\bcrian[cç]a[s]?\b",
+        r"\binfantil\b",
+        r"\badolescente[s]?\b",
+        r"\bjovem\s+perfil\s+adolescente\b",
     ]
-    idiomas_encontrados = []
-    for padrao, label in idiomas:
-        if re.search(padrao, t):
-            idiomas_encontrados.append(label)
-    if idiomas_encontrados:
-        itens.append(f"Idioma: {', '.join(idiomas_encontrados)}")
+    for pat in padroes_infantis:
+        if re.search(pat, tc[:200]):  # Verificar apenas no início (título + começo do conteúdo)
+            return False
 
-    # ── Tipo físico / aparência ──
-    tipos_fisicos = [
-        (r'alto|alta|altura', "Alto(a)"),
-        (r'baixo|baixa', "Baixo(a)"),
-        (r'magro|magra|esbelto', "Magro(a)/Esbelto"),
-        (r'gordo|gorda|plus size|sobrepeso', "Plus size/Sobrepeso"),
-        (r'musculoso|atlético|atleti', "Atlético/Musculoso"),
-        (r'barba', "Com barba"),
-        (r'sem barba|barbeado', "Sem barba"),
-        (r'cabelo longo', "Cabelo longo"),
-        (r'cabelo curto', "Cabelo curto"),
-        (r'careca|sem cabelo', "Careca"),
-        (r'loiro|loira|louro', "Loiro(a)"),
-        (r'moreno|morena', "Moreno(a)"),
-        (r'ruivo|ruiva', "Ruivo(a)"),
-        (r'olhos claros|olhos azuis|olhos verdes', "Olhos claros"),
-        (r'olhos escuros|olhos castanhos', "Olhos escuros"),
-        (r'tipo europeu', "Tipo europeu"),
-        (r'tipo mediterrâneo|mediterraneo', "Tipo mediterrâneo"),
-    ]
-    for padrao, label in tipos_fisicos:
-        if re.search(padrao, t):
-            itens.append(f"Tipo físico: {label}")
-
-    # ── Habilidades ──
-    habilidades = [
-        (r'cant[ao]r|canto|voz', "Canto/Voz"),
-        (r'dan[cç][ao]r|dan[cç]a', "Dança"),
-        (r'ator|atuar|atua[cç][ãa]o', "Atuação"),
-        (r'musiqu[ao]|instrumento|tocar', "Música/Instrumento"),
-        (r'acrobaci[ao]|acrobata', "Acrobacia"),
-        (r'circo|circense', "Circo/Cirquense"),
-        (r'malabar[ie]', "Malabarismo"),
-        (r'teatro musical|musical', "Teatro Musical"),
-        (r'dublagem|dublar', "Dublagem"),
-        (r'locução|locutor', "Locução"),
-        (r'comédia|humor', "Comédia/Humor"),
-        (r'improvis[ao]', "Improvisação"),
-        (r'stand.?up', "Stand-up"),
-        (r'natação|nadar', "Natação"),
-        (r'equitação|cavalgar|cavalo', "Equitação"),
-        (r'lut[ao]|artes marciais|capoeira', "Artes marciais/Luta"),
-    ]
-    habilidades_encontradas = []
-    for padrao, label in habilidades:
-        if re.search(padrao, t):
-            habilidades_encontradas.append(label)
-    if habilidades_encontradas:
-        itens.append(f"Habilidades: {', '.join(habilidades_encontradas)}")
-
-    # ── Experiência ──
-    experiencias = [
-        (r'experi[eê]ncia comprov', "Experiência comprovada exigida"),
-        (r'sem experi[eê]ncia|iniciante|estreante', "Sem experiência necessária"),
-        (r'profissional', "Perfil profissional"),
-        (r'amador', "Amador aceito"),
-        (r'curriculum|currículo|portfólio|portfolio', "Currículo/Portfólio exigido"),
-        (r'foto[s]?\s+(?:recente|atual|3x4)', "Foto recente exigida"),
-        (r'vídeo|video\s+(?:de\s+)?apresenta[cç][ãa]o', "Vídeo de apresentação exigido"),
-        (r'book\s+fotográfico|book\s+fotografico|book\s+de\s+fotos', "Book fotográfico exigido"),
-    ]
-    for padrao, label in experiencias:
-        if re.search(padrao, t):
-            itens.append(f"Requisito: {label}")
-
-    # ── Características especiais ──
-    especiais = [
-        (r'pessoa[s]?\s+com\s+defici[eê]ncia|pcd', "PCD (Pessoa com Deficiência)"),
-        (r'lgbtq|lgbt|trans|transgênero|não.?binário', "LGBTQIA+"),
-        (r'criança|infantil', "Criança/Infantil"),
-        (r'idoso|terceira\s+idade|sênior', "Idoso/Sênior"),
-        (r'gestante|grávida', "Gestante"),
-        (r'gêmeos|gêmeas', "Gêmeos"),
-        (r'tatuagem|tatuado', "Com tatuagem"),
-        (r'sem\s+tatuagem', "Sem tatuagem"),
-        (r'piercing', "Com piercing"),
-    ]
-    for padrao, label in especiais:
-        if re.search(padrao, t):
-            itens.append(f"Característica: {label}")
-
-    return " | ".join(itens) if itens else ""
-
-
-# Palavras-chave para categorizar oportunidades
-CATEGORIAS_TEATRO = ["teatro", "peça", "dramaturgia", "palco", "cena"]
-CATEGORIAS_AUDIOVISUAL = ["filme", "série", "novela", "comercial", "videoclipe", "web", "youtube", "tiktok"]
-CATEGORIAS_NAVIOS = ["navio", "cruzeiro", "marítimo", "embarcação"]
-CATEGORIAS_RESORTS = ["resort", "hotel", "hospedagem", "turismo", "animador"]
-CATEGORIAS_OUTRAS = ["evento", "propaganda", "publicidade", "show", "musical", "dança"]
-
-
-def _extrair_idade(texto: str) -> Optional[Tuple[Optional[int], Optional[int]]]:
-    """
-    Extrai faixa etária do texto.
-    Retorna (idade_minima, idade_maxima) ou (None, None) se não encontrar.
-    """
-    texto_lower = texto.lower()
-    
-    # Padrão: "18 a 30 anos" ou "18-30"
-    m = re.search(r'(\d{1,2})\s*(?:a|até|-)\s*(\d{1,2})\s*anos', texto_lower)
-    if m:
-        try:
-            return (int(m.group(1)), int(m.group(2)))
-        except ValueError:
-            pass
-    
-    # Padrão: "acima de 40 anos" ou "maiores de 40"
-    m = re.search(r'(?:acima de|maiores de|a partir de)\s*(\d{1,2})\s*anos', texto_lower)
-    if m:
-        try:
-            idade = int(m.group(1))
-            return (idade, None)
-        except ValueError:
-            pass
-    
-    # Padrão: "até 50 anos"
-    m = re.search(r'até\s*(\d{1,2})\s*anos', texto_lower)
-    if m:
-        try:
-            idade = int(m.group(1))
-            return (None, idade)
-        except ValueError:
-            pass
-    
-    return (None, None)
-
-
-def _extrair_aparencia(texto: str) -> Optional[Tuple[Optional[int], Optional[int]]]:
-    """
-    Extrai faixa de aparência do texto.
-    Retorna (aparencia_minima, aparencia_maxima) ou (None, None) se não encontrar.
-    """
-    texto_lower = texto.lower()
-    
-    # Padrão: "aparentar entre 35 e 50 anos" ou "aparência 35-50"
-    m = re.search(r'aparentar?\s*(?:entre)?\s*(\d{1,2})\s*(?:e|-)\s*(\d{1,2})\s*anos', texto_lower)
-    if m:
-        try:
-            return (int(m.group(1)), int(m.group(2)))
-        except ValueError:
-            pass
-    
-    # Padrão: "aparentar acima de 40"
-    m = re.search(r'aparentar?\s*(?:acima de|maiores de)\s*(\d{1,2})\s*anos', texto_lower)
-    if m:
-        try:
-            idade = int(m.group(1))
-            return (idade, None)
-        except ValueError:
-            pass
-    
-    return (None, None)
-
-
-def _atende_criterios_genero(texto_genero: str) -> bool:
-    """
-    Verifica se o gênero atende aos critérios (homem ou não especificado).
-
-    Regras:
-    - Campo vazio ou ausente: incluir (não especificado)
-    - "Não especificado", "qualquer", "ambos", "todos": incluir
-    - "Homem", "masculino": incluir
-    - "Mulher", "feminino", "atriz" (sem mencionar homem): excluir
-    - "Homens e mulheres" / "ambos os sexos": incluir (aberto para homens também)
-    """
-    if not texto_genero:
-        return True  # Não especificado = incluir
-
-    texto_lower = texto_genero.lower().strip()
-
-    # Aceitar imediatamente se for explicitamente não especificado / aberto
-    GENEROS_INCLUSIVOS = [
-        "não especificado", "nao especificado", "qualquer", "ambos",
-        "todos", "aberto", "qualquer perfil", "qualquer gênero",
-        "homens e mulheres", "mulheres e homens",
-        "ambos os sexos", "todos os gêneros",
-    ]
-    if any(x in texto_lower for x in GENEROS_INCLUSIVOS):
+    # Não especificado ou ambos: aceitar
+    if g in ("não especificado", "homens e mulheres", "ambos", "todos", ""):
         return True
-
-    # Aceitar se mencionar homem/masculino
-    if any(x in texto_lower for x in ["homem", "masculino", "ator", "m ", "m,"]):
+    # Explicitamente masculino: aceitar
+    if any(x in g for x in ("homem", "masculino", "ator", "cantor")):
         return True
-
-    # Excluir apenas se for EXCLUSIVAMENTE feminino (sem menção a homem)
-    GENEROS_FEMININOS_EXCLUSIVOS = ["mulher", "feminino", "atriz", "atrice"]
-    if any(x in texto_lower for x in GENEROS_FEMININOS_EXCLUSIVOS):
+    # Explicitamente feminino: rejeitar
+    if any(x in g for x in ("mulher", "feminino", "atriz", "cantora")):
         return False
-
-    # Qualquer outro valor não reconhecido: incluir por precaução
+    # Verificar no conteúdo: se menciona apenas mulheres sem homens
+    tem_feminino = bool(re.search(r"\b(mulheres?|feminino|atriz|atrizes|cantora[s]?)\b", tc))
+    tem_masculino = bool(re.search(r"\b(homens?|masculino|ator|atores|cantor[es]?)\b", tc))
+    if tem_feminino and not tem_masculino:
+        return False
     return True
 
 
-def _atende_criterios_idade_aparencia(oportunidade: Dict) -> bool:
+def _atende_criterios_idade(faixa_etaria: str, conteudo: str) -> bool:
     """
-    Verifica se a oportunidade atende aos critérios de idade/aparência:
-    - Acima de 40 anos OU
-    - Aparência entre 35-50 anos OU
-    - Não especificado
+    Retorna True se:
+    - Faixa não especificada
+    - Faixa inclui 40+ anos
+    - Faixa de aparência inclui 35-50 anos
+    - Faixa é ampla o suficiente (ex: 18-60)
     """
-    idade_min, idade_max = _extrair_idade(
-        f"{oportunidade.get('idade_minima', '')} {oportunidade.get('idade_maxima', '')}"
-    )
-    aparencia_min, aparencia_max = _extrair_aparencia(oportunidade.get('aparencia', ''))
-    
-    # Se não há especificação de idade/aparência, incluir
-    if idade_min is None and idade_max is None and aparencia_min is None and aparencia_max is None:
+    if not faixa_etaria:
+        return True  # Não especificado: aceitar
+
+    # Tentar extrair números da faixa
+    nums = re.findall(r"\d+", faixa_etaria)
+    if not nums:
         return True
-    
-    # Critério 1: Acima de 40 anos (idade_minima >= 40 ou sem limite superior)
-    if idade_min is not None and idade_min >= IDADE_MINIMA_ALVO:
-        return True
-    
-    # Critério 2: Aparência entre 35-50 anos
-    if aparencia_min is not None and aparencia_max is not None:
-        # Verifica se a faixa se sobrepõe com 35-50
-        if aparencia_min <= APARENCIA_MAXIMA and aparencia_max >= APARENCIA_MINIMA:
+
+    if len(nums) == 1:
+        # "A partir de X" ou "acima de X"
+        idade_min = int(nums[0])
+        return idade_min <= 50  # Aceitar se min <= 50
+
+    if len(nums) >= 2:
+        idade_min = int(nums[0])
+        idade_max = int(nums[1])
+        # Aceitar se a faixa inclui 40 anos ou se max >= 35
+        if idade_max >= 35 and idade_min <= 60:
             return True
-    elif aparencia_min is not None and aparencia_min >= APARENCIA_MINIMA:
-        return True
-    elif aparencia_max is not None and aparencia_max >= APARENCIA_MINIMA:
-        return True
-    
-    # Critério 3: Sem limite máximo de idade (pode ser 40+)
-    if idade_max is None and idade_min is not None and idade_min <= IDADE_MINIMA_ALVO:
-        return True
-    
+        return False
+
+    return True
+
+
+def _excluir_por_etnia(conteudo: str) -> bool:
+    """
+    Retorna True (excluir) se o anúncio é exclusivamente para etnias
+    incompatíveis com o perfil do usuário (branco/caucasiano).
+    """
+    if not ETNIAS_INCOMPATIVEIS.search(conteudo):
+        return False  # Sem menção a etnias incompatíveis: manter
+
+    # Verificar se há contra-indicadores (lista inclusiva com brancos)
+    if CONTRA_INDICADORES.search(conteudo):
+        return False  # Lista inclusiva: manter
+
+    # Padrões de exclusividade étnica direta no título ou conteúdo
+    padroes_exclusivos_diretos = [
+        r"\bascend[eê]ncia\s+(coreana|japonesa|chinesa|oriental|indígena|africana)\b",
+        r"\bde\s+origem\s+(coreana|japonesa|chinesa|oriental|indígena|africana|negra)\b",
+        r"\bperfil\s+(negro|negra|oriental|indígena|asiático|asiática)\b",
+        r"\bDreamgirls\b",  # Musical com elenco predominantemente negro
+        r"\bHamilton\b",    # Musical com casting diverso mas histórico
+    ]
+    for pat in padroes_exclusivos_diretos:
+        if re.search(pat, conteudo, re.IGNORECASE):
+            return True
+
+    # Verificar se há modificador de exclusividade próximo ao termo étnico
+    if MODIFICADORES_EXCLUSIVOS.search(conteudo):
+        return True  # Exclusivo para etnia incompatível: excluir
+
+    # Se o único perfil mencionado é de etnia incompatível (sem mencionar brancos)
+    # e o conteúdo é curto (provavelmente um card estruturado), excluir
+    if len(conteudo) < 500:
+        etnias_encontradas = ETNIAS_INCOMPATIVEIS.findall(conteudo)
+        if etnias_encontradas and not re.search(r"\b(branco[s]?|caucasian[oa]s?|european[oa]s?)", conteudo, re.IGNORECASE):
+            return True
+
     return False
 
 
-def _categorizar_oportunidade(titulo: str, descricao: str) -> str:
-    """Categoriza a oportunidade (teatro, audiovisual, navios, resorts, etc)."""
-    texto = f"{titulo} {descricao}".lower()
-    
-    if any(x in texto for x in CATEGORIAS_TEATRO):
-        return "Teatro"
-    elif any(x in texto for x in CATEGORIAS_AUDIOVISUAL):
-        return "Audiovisual"
-    elif any(x in texto for x in CATEGORIAS_NAVIOS):
-        return "Navios/Cruzeiros"
-    elif any(x in texto for x in CATEGORIAS_RESORTS):
-        return "Resorts/Hotéis"
-    elif any(x in texto for x in CATEGORIAS_OUTRAS):
-        return "Eventos/Outros"
-    else:
-        return "Geral"
+def _extrair_perfil_completo(conteudo: str) -> str:
+    """Extrai o detalhamento completo do perfil procurado no anúncio."""
+    campos = []
 
+    # Gênero
+    if re.search(r"\b(homens?\s+e\s+mulheres?|ambos|todos\s+os\s+gêneros?)\b", conteudo, re.I):
+        campos.append("Gênero: Homens e Mulheres")
+    elif re.search(r"\b(somente\s+homens?|apenas\s+homens?|masculino)\b", conteudo, re.I):
+        campos.append("Gênero: Masculino")
+    elif re.search(r"\b(somente\s+mulheres?|apenas\s+mulheres?|feminino)\b", conteudo, re.I):
+        campos.append("Gênero: Feminino")
 
-def _extrair_data(texto: str, padrao: str = None) -> Optional[str]:
-    """
-    Extrai data do texto em formato DD/MM/YYYY.
-    Se padrao for fornecido, procura especificamente por esse padrão.
-    """
-    if not texto:
-        return None
-    
-    # Padrão genérico: DD/MM/YYYY ou DD/MM/YY
-    m = re.search(r'(\d{1,2})/(\d{1,2})/(\d{2,4})', texto)
-    if m:
-        return f"{m.group(1)}/{m.group(2)}/{m.group(3)}"
-    
-    # Padrão: "DD de mês de YYYY"
-    meses = {
-        'janeiro': '01', 'fevereiro': '02', 'março': '03', 'abril': '04',
-        'maio': '05', 'junho': '06', 'julho': '07', 'agosto': '08',
-        'setembro': '09', 'outubro': '10', 'novembro': '11', 'dezembro': '12'
-    }
-    for mes_nome, mes_num in meses.items():
-        m = re.search(rf'(\d{{1,2}})\s+de\s+{mes_nome}\s+de\s+(\d{{4}})', texto, re.IGNORECASE)
-        if m:
-            return f"{m.group(1)}/{mes_num}/{m.group(2)}"
-    
-    return None
-
-
-def _extrair_cache(texto: str) -> Optional[str]:
-    """Extrai informação de cachê do texto."""
-    if not texto:
-        return None
-    
-    # Padrão: "R$ 500" ou "R$ 500,00" ou "500 reais"
-    m = re.search(r'R\$\s*([\d.,]+)', texto, re.IGNORECASE)
-    if m:
-        return f"R$ {m.group(1)}"
-    
-    m = re.search(r'([\d.,]+)\s*reais', texto, re.IGNORECASE)
-    if m:
-        return f"R$ {m.group(1)}"
-    
-    return None
-
-
-def _extrair_endereco(texto: str) -> Optional[str]:
-    """Extrai endereço do texto."""
-    if not texto:
-        return None
-    
-    # Procura por padrões comuns de endereço
-    # Rua/Avenida/Praça + número + complemento
-    m = re.search(
-        r'(?:Rua|Avenida|Av\.|Praça|Pça|Travessa|Trav\.|Alameda|Estrada|Rodovia)\s+'
-        r'([^,\n]+(?:,\s*n[º°]?\s*\d+)?[^,\n]*)',
-        texto,
-        re.IGNORECASE
+    # Faixa etária
+    fa = re.search(
+        r"(\d{1,2})\s*(?:a|ao?|[-–])\s*(\d{1,2})\s*anos?", conteudo, re.I
     )
-    if m:
-        return m.group(1).strip()
-    
-    return None
+    if fa:
+        campos.append(f"Idade: {fa.group(1)}-{fa.group(2)} anos")
+    else:
+        fa2 = re.search(
+            r"(?:a partir|acima|mais)\s+de\s+(\d{1,2})\s*anos?", conteudo, re.I
+        )
+        if fa2:
+            campos.append(f"Idade: A partir de {fa2.group(1)} anos")
+
+    # Etnia/cor
+    etnia_m = re.search(
+        r"\b(branco[s]?|caucasian[oa]s?|negr[oa]s?|pard[oa]s?|"
+        r"oriental[is]?|indígena[s]?|latin[oa]s?|mediterrâne[oa]s?|"
+        r"european[oa]s?|italian[oa]s?|todos\s+os\s+tipos?\s+étnicos?)\b",
+        conteudo, re.I
+    )
+    if etnia_m:
+        campos.append(f"Etnia/cor: {etnia_m.group(0)}")
+
+    # Idioma
+    idioma_m = re.findall(
+        r"\b(inglês|espanhol|português|italiano|francês|alemão|"
+        r"bilíngue|trilíngue|fluente\s+em\s+\w+|fluência\s+em\s+\w+)\b",
+        conteudo, re.I
+    )
+    if idioma_m:
+        campos.append(f"Idioma: {', '.join(dict.fromkeys(idioma_m))}")
+
+    # Tipo físico
+    fisico_m = re.findall(
+        r"\b(alt[oa]s?|baix[oa]s?|magr[oa]s?|atletic[oa]s?|"
+        r"barba|carec[oa]|loir[oa]s?|moren[oa]s?|ruiv[oa]s?|"
+        r"olhos?\s+claros?|olhos?\s+escuros?|tipo\s+europe[uo]|"
+        r"tipo\s+mediterrâne[uo]|tipo\s+latin[oa])\b",
+        conteudo, re.I
+    )
+    if fisico_m:
+        campos.append(f"Tipo físico: {', '.join(dict.fromkeys(fisico_m))}")
+
+    # Habilidades
+    hab_m = re.findall(
+        r"\b(cant[oa]r?|canto|dança[r]?|danç[ao]|atuação|"
+        r"instrumento\s+musical|\w+ista|acrobacia|circo|"
+        r"dublagem|locução|comédia|improvisação|stand.?up|"
+        r"natação|equitação|artes\s+marciais)\b",
+        conteudo, re.I
+    )
+    if hab_m:
+        campos.append(f"Habilidades: {', '.join(dict.fromkeys(hab_m[:5]))}")
+
+    # Requisitos
+    req_m = re.findall(
+        r"\b(experiência\s+comprovada|sem\s+experiência|"
+        r"currículo|portfólio|foto\s+recente|vídeo\s+de\s+apresentação|"
+        r"book\s+fotográfico|fotos?\s+3x4|fotos?\s+recentes?)\b",
+        conteudo, re.I
+    )
+    if req_m:
+        campos.append(f"Requisitos: {', '.join(dict.fromkeys(req_m[:3]))}")
+
+    return " | ".join(campos) if campos else ""
 
 
-# ─────────────────────────────────────────────────────────────────
-# Utilitários HTTP
-# ─────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# SCRAPER 1: RSS FEEDS (Guia do Ator + A Broadway é Aqui)
+# ─────────────────────────────────────────────────────────────────────────────
 
-def _get(url: str, session: requests.Session) -> Optional[str]:
-    try:
-        r = session.get(url, timeout=TIMEOUT, headers=HEADERS)
-        r.raise_for_status()
-        return r.text
-    except Exception as exc:
-        logger.debug(f"GET {url}: {exc}")
-        return None
+RSS_FEEDS = [
+    # Guia do Ator
+    {
+        "nome": "Guia do Ator",
+        "url": "https://guiadoator.com.br/category/testes/feed/",
+        "categoria_default": "Outros",
+    },
+    {
+        "nome": "Guia do Ator",
+        "url": "https://guiadoator.com.br/category/remunerados/feed/",
+        "categoria_default": "Outros",
+    },
+    # A Broadway é Aqui
+    {
+        "nome": "A Broadway é Aqui",
+        "url": "https://abroadwayeaqui.com.br/category/audicoes/feed/",
+        "categoria_default": "Teatro",
+    },
+    # Navio Cabaré
+    {
+        "nome": "Navio Cabaré",
+        "url": "https://naviocabare.com.br/feed/",
+        "categoria_default": "Navios/Cruzeiros",
+    },
+]
 
-
-def _get_json(url: str, session: requests.Session) -> Optional[dict]:
-    try:
-        r = session.get(url, timeout=TIMEOUT, headers=HEADERS)
-        r.raise_for_status()
-        return r.json()
-    except Exception as exc:
-        logger.debug(f"GET JSON {url}: {exc}")
-        return None
-
-
-# ─────────────────────────────────────────────────────────────────
-# Fontes externas identificadas (sites oficiais dos perfis seguidos)
-# ─────────────────────────────────────────────────────────────────
-
-FONTES_INSTAGRAM = {
-    # ── CRUZEIROS / NAVIOS ─────────────────────────────────────────
-    "carnivalentertainment": {"nome": "Carnival Entertainment", "url": "https://www.carnivalentertainment.com/", "categoria": "Navios/Cruzeiros"},
-    "celebritycruisescasting": {"nome": "Celebrity Cruises Entertainment", "url": "https://www.celebritycruisesentertainment.com/", "categoria": "Navios/Cruzeiros"},
-    "costacruisescasting": {"nome": "Costa Cruises Auditions", "url": "https://career.costacrociere.it/", "categoria": "Navios/Cruzeiros"},
-    "disneyauditions": {"nome": "Disney Auditions", "url": "https://jobs.disneycareers.com/auditions", "categoria": "Navios/Cruzeiros"},
-    "hollandamericacasting": {"nome": "Holland America Line", "url": "https://www.hollandamerica.com/", "categoria": "Navios/Cruzeiros"},
-    "msccruisescasting": {"nome": "MSC Cruises Careers", "url": "https://careers.msccruises.com/", "categoria": "Navios/Cruzeiros"},
-    "msccastingbrazil": {"nome": "MSC Cruises Casting Brazil", "url": "https://careers.msccruises.com/", "categoria": "Navios/Cruzeiros"},
-    "norwegiancruisecasting": {"nome": "NCLH Shows & Experiences", "url": "https://nclhcreativestudios.com/", "categoria": "Navios/Cruzeiros"},
-    "nclcasting": {"nome": "Norwegian Cruise Line Creative Studios", "url": "https://nclhcreativestudios.com/", "categoria": "Navios/Cruzeiros"},
-    "royalcaribbeancareers": {"nome": "Royal Caribbean Group Careers", "url": "https://careers.royalcaribbeangroup.com/", "categoria": "Navios/Cruzeiros"},
-    "royalcaribbeanentertainment": {"nome": "Royal Caribbean Productions", "url": "https://royalcaribbeanentertainment.com/", "categoria": "Navios/Cruzeiros"},
-    "aidacasting": {"nome": "AIDA Casting", "url": "https://aida.de/careers/en/casting", "categoria": "Navios/Cruzeiros"},
-    # ── TEATRO ─────────────────────────────────────────────────────
-    "cirquedusoleil": {"nome": "Cirque du Soleil", "url": "https://www.cirquedusoleil.com/", "categoria": "Teatro"},
-    "cirquedusoleilcasting": {"nome": "Cirque du Soleil Casting", "url": "https://casting.cirquedusoleil.com/", "categoria": "Teatro"},
-    "disneytheatricalcasting": {"nome": "Disney Theatrical Productions", "url": "https://disneyonbroadway.com/casting/", "categoria": "Teatro"},
-    "broadwaycasting": {"nome": "Broadway Casting", "url": "https://www.playbill.com/casting", "categoria": "Teatro"},
-    # ── AUDIOVISUAL BRASILEIRO ──────────────────────────────────────
-    "elencodigital": {"nome": "Elenco Digital", "url": "https://elencodigital.com.br/", "categoria": "Audiovisual"},
-    "guiadoator": {"nome": "Guia do Ator", "url": "https://guiadoator.com.br/", "categoria": "Audiovisual"},
-    "globocasting": {"nome": "Globo Captação de Talentos", "url": "https://captacao.talentosartisticos.g.globo/", "categoria": "Audiovisual"},
-    "globofilmes": {"nome": "Globo Filmes", "url": "https://gshow.globo.com/cultura-pop/filmes/globo-filmes/", "categoria": "Audiovisual"},
-    "a2filmesoficial": {"nome": "A2 Filmes", "url": "https://a2filmes.com.br/", "categoria": "Audiovisual"},
-    "sradocasting": {"nome": "Sra. do Casting", "url": "https://www.facebook.com/sra.docasting/", "categoria": "Audiovisual"},
-    "marcelaaltberg": {"nome": "Marcela Altberg", "url": "https://www.facebook.com/elenco.marcelaaltberg/", "categoria": "Audiovisual"},
-    "annetrevisan_elenco": {"nome": "Anne Trevisan", "url": "https://www.annetrevisan.com/", "categoria": "Audiovisual"},
-    "melina_anthis_elenco": {"nome": "Melina Anthís Youkali Elenco", "url": "https://melinaanthis.elencodigital.com.br/", "categoria": "Audiovisual"},
-    "renatamedeiros_el": {"nome": "Renata Medeiros", "url": "https://renatamedeiros.elencodigital.com.br/", "categoria": "Audiovisual"},
-    "betaborges_elenco": {"nome": "Beta Borges", "url": "https://betaborges.elencodigital.com.br/", "categoria": "Audiovisual"},
-    "we_elenco": {"nome": "We Elenco Produções Artísticas", "url": "https://www.facebook.com/we.elenco/", "categoria": "Audiovisual"},
-    "yr.elenco": {"nome": "YR Agenciamento", "url": "https://yolandarodriguesproducoes.com.br/", "categoria": "Audiovisual"},
-    "dea_diretores_de_elenco": {"nome": "DEA - Diretores de Elenco Associados", "url": "http://diretoresdeelenco.com.br/", "categoria": "Audiovisual"},
-    "luz.elenco": {"nome": "Felipe Luz (Luz Elenco)", "url": "https://www.facebook.com/elencoluz/?locale=pt_BR", "categoria": "Audiovisual"},
-    "testedeelencobrasil": {"nome": "Teste de Elenco Brasil", "url": "https://www.facebook.com/testedeelencobrasil/", "categoria": "Audiovisual"},
-    "selecaodeelenco": {"nome": "Seleção de Elenco", "url": "https://www.facebook.com/selecaodeelenco/", "categoria": "Audiovisual"},
-    "elencotla": {"nome": "T.L.A. Produções Artísticas", "url": "https://tlaproducoesartisticas.com.br/", "categoria": "Audiovisual"},
-    "autentica.elenco": {"nome": "Talentos Autêntica", "url": "https://www.autenticaprod.com/", "categoria": "Audiovisual"},
-    "vcelenco": {"nome": "VC Elenco", "url": "https://www.facebook.com/vcelenco/", "categoria": "Audiovisual"},
-    "mondicasting": {"nome": "Mondiale Agência de Elenco", "url": "http://agenciamondiale.com.br/", "categoria": "Audiovisual"},
-    "ritchellyelencoefig": {"nome": "Ritchelly Elenco e Figuração", "url": "https://www.facebook.com/RITCHELLYprodutor2/", "categoria": "Audiovisual"},
-    "redetvcasting": {"nome": "RedeTV! Casting", "url": "https://www.redetv.uol.com.br/", "categoria": "Audiovisual"},
-    # ── CASTING GERAL ──────────────────────────────────────────────
-    "projectcasting": {"nome": "Project Casting", "url": "https://projectcasting.com/", "categoria": "Geral"},
-    "openauditions": {"nome": "Open Auditions", "url": "https://www.openauditions.uk/", "categoria": "Geral"},
-    "ooppahoficial": {"nome": "Ooppah Soluções Artísticas", "url": "https://ooppah.com/", "categoria": "Geral"},
-    "nscasting": {"nome": "Nossa Senhora do Casting", "url": "https://nscast.me/", "categoria": "Geral"},
-    "castapp.oficial": {"nome": "Castapp", "url": "https://castapp.pro/", "categoria": "Geral"},
-    "pesquisadeelenco": {"nome": "Pesquisa de Elenco", "url": "https://pesquisadeelenco.com/", "categoria": "Geral"},
-    "elencodaraquel": {"nome": "Raquel Neves Casting", "url": "https://www.elencodaraquel.com/", "categoria": "Geral"},
-    "ranierifullcasting": {"nome": "Ranieri Full Casting", "url": "https://ranierifullcasting.com.br/", "categoria": "Geral"},
-    "marinicasting": {"nome": "Marini Casting", "url": "https://marinicasting.com.br/", "categoria": "Geral"},
-    "mesadebooker": {"nome": "Mesa de Booker", "url": "https://mesadebooker.com.br/", "categoria": "Geral"},
-    "orenda.casting": {"nome": "Orenda Casting", "url": "https://orendacasting.com.br/", "categoria": "Geral"},
-    "noarcasting": {"nome": "No Ar Casting", "url": "http://noarcasting.com.br/", "categoria": "Geral"},
-    "luzcastingg": {"nome": "Luz Casting", "url": "https://luzcasting.live/", "categoria": "Geral"},
-    "avantecasting": {"nome": "Avante Casting", "url": "https://www.avantecasting.com.br/", "categoria": "Geral"},
-    "armyagency_casting": {"nome": "Army Agency Casting", "url": "https://www.armycasting.com.br/", "categoria": "Geral"},
-    "attos.casting": {"nome": "Attos Casting", "url": "https://attoscasting.com/", "categoria": "Geral"},
-    "agenciavictoriacasting": {"nome": "Agência Victoria Casting", "url": "https://victoriacasting.com.br/", "categoria": "Geral"},
-    "castingimperio": {"nome": "Agência Império", "url": "https://agenciaimperio.com.br", "categoria": "Geral"},
-    "castinghouse_br": {"nome": "Casting House", "url": "https://castinghouse.com.br/", "categoria": "Geral"},
-    "armandocasting": {"nome": "Armando Casting", "url": "https://www.facebook.com/armandocasting/", "categoria": "Geral"},
-    "carlalima.casting": {"nome": "Carla Lima Produções Artísticas", "url": "https://carlalima.com.br/", "categoria": "Geral"},
-    "personajes.br": {"nome": "Personajes Brasil", "url": "https://personajesbr.com/", "categoria": "Geral"},
-    "pearsoncasting": {"nome": "Pearson Casting", "url": "https://www.pearsoncasting.com/", "categoria": "Geral"},
-    "dobcasting": {"nome": "Debbie O'Brien Casting", "url": "https://www.debbieobrien.net/", "categoria": "Geral"},
-    "erikaslama": {"nome": "Erika Slama", "url": "https://erikaslama.com.br/", "categoria": "Geral"},
-    "flowcasting": {"nome": "Flow Casting", "url": "https://flow.page/flowcastingjobs", "categoria": "Geral"},
-    "emmecasting": {"nome": "EMME Casting", "url": "https://www.facebook.com/emmecasting/", "categoria": "Geral"},
-    "merlincastings": {"nome": "Merlin Castings", "url": "https://www.facebook.com/MerlinCastings/", "categoria": "Geral"},
-    "ummacasting": {"nome": "Umma Casting", "url": "https://bio.site/ummacasting", "categoria": "Geral"},
-    "nossocasting": {"nome": "Nosso Casting", "url": "https://www.facebook.com/nossocasting/", "categoria": "Geral"},
-    "clubedocasting": {"nome": "Clube do Casting", "url": "https://www.facebook.com/clubedocasting/", "categoria": "Geral"},
-    "santocasting": {"nome": "Santo Casting", "url": "https://www.facebook.com/santocasting/", "categoria": "Geral"},
-    "leecastingelenco": {"nome": "Lee Casting", "url": "https://www.facebook.com/lee.casting/", "categoria": "Geral"},
-    "etcelenco": {"nome": "Etc Elenco", "url": "https://www.facebook.com/EtcElenco/", "categoria": "Geral"},
-    "me_casting": {"nome": "ME Casting Team", "url": "https://www.mecastingteam.me/", "categoria": "Geral"},
-    "casting.eastwest": {"nome": "East West Entertainment Group", "url": "https://www.eastwestevents.ae/", "categoria": "Geral"},
-    "ellacastingstockholm": {"nome": "Ella Casting", "url": "https://ellacasting.se/", "categoria": "Geral"},
-    "nordcasting": {"nome": "Nord Casting", "url": "https://www.nordcasting.se/", "categoria": "Geral"},
-    "synkcasting": {"nome": "Synk Casting", "url": "https://www.synkcasting.se/", "categoria": "Geral"},
-    "lmcasting": {"nome": "LM Casting", "url": "https://www.facebook.com/lottamalmcasting/", "categoria": "Geral"},
-    "universalcastingmiami": {"nome": "Universal Casting", "url": "https://www.universalcast.com/", "categoria": "Geral"},
-    "yulicasting": {"nome": "Yuli Casting", "url": "https://br.linkedin.com/in/yuli-mota", "categoria": "Geral"},
-    "viktoriia_talentguideagency": {"nome": "Viktoria Talent Management", "url": "https://viktoriia.management/", "categoria": "Geral"},
-    "dc.casting": {"nome": "DC Casting & Produções", "url": "https://www.facebook.com/dccastiing/", "categoria": "Geral"},
-    "vazprod": {"nome": "VAZ Produção e Casting", "url": "https://www.facebook.com/vazproducaoecasting/", "categoria": "Geral"},
-    "agenciarenatareis": {"nome": "Agência de Casting Renata Reis", "url": "https://www.facebook.com/renata.reis.562/", "categoria": "Geral"},
-    "mairareiscasting": {"nome": "Máira Reis Casting", "url": "http://www.instagram.com/mairareiscasting/", "categoria": "Geral"},
-    "dii.casting": {"nome": "Dii Casting", "url": "https://www.instagram.com/dii.casting/", "categoria": "Geral"},
-    "a2castinghouse": {"nome": "A2 Casting House", "url": "https://www.a2castinghouse.com/", "categoria": "Geral"},
-    # ── ALIASES E HANDLES TRUNCADOS (mapeamento de handles da lista original) ──
-    "cirquedusoleilca": {"nome": "Cirque du Soleil Casting", "url": "https://casting.cirquedusoleil.com/", "categoria": "Teatro"},
-    "agenciavictoriacast": {"nome": "Agência Victoria Casting", "url": "https://victoriacasting.com.br/", "categoria": "Geral"},
-    "miss.casting_isabe": {"nome": "Isabel Lobo Casting", "url": "https://isabellobo.elencodigital.com.br/", "categoria": "Audiovisual"},
-    "miss.casting_isabellobo": {"nome": "Isabel Lobo Casting", "url": "https://isabellobo.elencodigital.com.br/", "categoria": "Audiovisual"},
-    "pro_casting_and_c": {"nome": "Pro Casting and Coaching", "url": "https://www.procasting.se/", "categoria": "Geral"},
-    "studiiocasting": {"nome": "Studiio Casting", "url": "https://www.instagram.com/studiiocasting/", "categoria": "Audiovisual"},
-    "viktoriia_talentguid": {"nome": "Viktoria Talent Management", "url": "https://viktoriia.management/", "categoria": "Geral"},
-    "melina_anthis_elen": {"nome": "Melina Anthís Youkali Elenco", "url": "https://melinaanthis.elencodigital.com.br/", "categoria": "Audiovisual"},
-    "dea_diretores_de_": {"nome": "DEA - Diretores de Elenco Associados", "url": "http://diretoresdeelenco.com.br/", "categoria": "Audiovisual"},
-    "ag_oknelle_elenco": {"nome": "Ag. Oknelle Elenco", "url": "https://www.instagram.com/ag_oknelle_elenco/", "categoria": "Audiovisual"},
-    "pauloparedes.elenco": {"nome": "Paulo Paredes Elenco", "url": "https://www.instagram.com/pauloparedes.elenco/", "categoria": "Audiovisual"},
-    # ── PERFIS REVISITADOS – links extraídos da bio ──
-    # @patriciaprodutorad: perfil removido/inexistente no Instagram
-    # @a2.casting: agência de marketing de influência (Be Around), não relevante para casting de atores
-    # @castingbrasil, @telenovelascasting, @recordcasting, @sbttv_casting, @bandcasting: perfis inexistentes
-    # @netflixbrasil_casting, @amazonprimecasting, @warnercasting, @universalpicturescasting: perfis inexistentes
-    # @zarpellon_casting, @casadacasting, @elencobrasil, @dreamworksonboard: perfis inexistentes
-    "castingrm": {"nome": "Casting RM (Rodrigo Morais)", "url": "https://www.instagram.com/castingrm/", "categoria": "Teatro"},
-    "prooo_dutora": {"nome": "Prooo - Diretora de Elenco", "url": "https://elenconarede.com.br/", "categoria": "Audiovisual"},
-    "elenconarede": {"nome": "Elenco na Rede", "url": "https://elenconarede.com.br/", "categoria": "Audiovisual"},
-    "elenconegro": {"nome": "Elenco Negro", "url": "https://www.elenconegro.com.br/", "categoria": "Audiovisual"},
-    "casting.brasil": {"nome": "Casting Brasil", "url": "https://www.instagram.com/casting.brasil/", "categoria": "Audiovisual"},
-    "sixflags_casting": {"nome": "Six Flags Live Entertainment", "url": "https://jobs.sixflags.com/live-entertainment", "categoria": "Teatro"},
-    "officialdisneyauditions": {"nome": "Disney Auditions (oficial)", "url": "https://jobs.disneycareers.com/auditions", "categoria": "Teatro"},
-    "hbocasting": {"nome": "HBO Casting", "url": "https://www.backstage.com/casting/open-casting-calls/hbo/", "categoria": "Audiovisual"},
-    "lm.casting": {"nome": "LM Casting", "url": "https://www.facebook.com/lottamalmcasting/", "categoria": "Geral"},
-    # ── TV ABERTA BRASIL ──
-    "sbt_casting": {"nome": "SBT Elenco", "url": "https://elenco.tvsbt.com.br/", "categoria": "Audiovisual"},
-    "band_casting": {"nome": "Band Casting", "url": "https://band.jobs.recrut.ai/apply/UNA04Q", "categoria": "Audiovisual"},
-    "redetv_casting": {"nome": "RedeTV! Talentos Brilhantes", "url": "https://www.talentosbrilhantes.com.br/cadastro/", "categoria": "Audiovisual"},
-    "tvcultura_talentos": {"nome": "TV Cultura Banco de Talentos", "url": "https://tvcultura.com.br/bancodetalentos/", "categoria": "Audiovisual"},
-    "tvbrasil_selecao": {"nome": "TV Brasil / EBC Seleção", "url": "https://selecao.tvbrasil.ebc.com.br/", "categoria": "Audiovisual"},
-    # ── STREAMING / GLOBOPLAY ──
-    "globoplay_talentos": {"nome": "Globoplay / Talentos Artísticos Globo", "url": "https://captacao.talentosartisticos.g.globo/home", "categoria": "Audiovisual"},
-    # ── AGÊNCIAS DE TALENTOS ──
-    "agenciafivecasting": {"nome": "Five Casting", "url": "https://fivecasting.com.br/", "categoria": "Audiovisual"},
-    "agrain": {"nome": "Aline Grain Agência", "url": "https://www.alinegrain.com.br/", "categoria": "Audiovisual"},
-    "fernandaribasmanagement": {"nome": "Fernanda Ribas Management", "url": "https://fernandaribas.com/", "categoria": "Audiovisual"},
-    "glossmodel": {"nome": "Agência Gloss", "url": "https://glossmodel.com.br/", "categoria": "Geral"},
-    "infinity.brazil": {"nome": "Infinity Brazil (Cruzeiros)", "url": "https://infinity-brazil.com.br/pt/", "categoria": "Navios/Cruzeiros"},
-    "latinwe": {"nome": "Latin World Entertainment", "url": "https://www.latinwe.com/", "categoria": "Audiovisual"},
-    "lmaproducoes": {"nome": "Grupo LMA Produções", "url": "https://www.lmaproducoes.com.br/", "categoria": "Audiovisual"},
-    "voxtalents": {"nome": "Vox Talents", "url": "https://www.voxtalents.com/", "categoria": "Audiovisual"},
+# Categorias a excluir do Guia do Ator (não são oportunidades de casting)
+CATS_EXCLUIR_GDA = {
+    "cursos", "curso", "workshop", "notícias", "noticias",
+    "dica cultural", "internet", "oscar", "cinema", "música",
+    "séries", "series", "geral", "novidades",
 }
 
 
-def scrape_fonte_generica(url: str, nome_fonte: str, categoria: str,
-                          session: requests.Session) -> List[Dict]:
-    """
-    Scraper genérico para sites de casting.
-    Extrai oportunidades de qualquer URL com estrutura HTML padrão.
-    """
-    oportunidades = []
+def _processar_item_rss(item: ET.Element, fonte: str, categoria_default: str) -> Optional[Dict]:
+    """Processa um item de feed RSS e retorna um dicionário de oportunidade ou None."""
+    link = (item.findtext("link") or "").strip()
+    title = html.unescape((item.findtext("title") or "").strip())
+    desc_raw = item.findtext("description") or ""
+    desc = html.unescape(BeautifulSoup(desc_raw, "html.parser").get_text())
+    cats = [c.text.lower() for c in item.findall("category") if c.text]
+    pub_date = item.findtext("pubDate") or ""
+
+    if not title or not link:
+        return None
+
+    # Filtrar categorias não relevantes (apenas para Guia do Ator)
+    if fonte == "Guia do Ator":
+        if any(c in CATS_EXCLUIR_GDA for c in cats):
+            if not KW_OPORTUNIDADE.search(title):
+                return None
+
+    # Verificar se é uma oportunidade real
+    texto_completo = f"{title} {desc}"
+    if not KW_OPORTUNIDADE.search(texto_completo):
+        return None
+
+    # Rejeitar pelo título se for exclusivamente feminino
+    if re.search(r"\b(sele[çc][aã]o\s+de\s+atrizes?|casting\s+feminino|apenas\s+mulheres?)\b", title, re.IGNORECASE):
+        return None
+
+    # Buscar conteúdo completo do post (com timeout curto)
+    conteudo = desc
     try:
-        html = _get(url, session)
-        if not html:
-            return oportunidades
+        pr = requests.get(link, timeout=6, headers=HEADERS)
+        soup_post = BeautifulSoup(pr.content, "html.parser")
+        # Tentar diferentes seletores para o conteúdo principal
+        for sel in ["div.entry-content", "div.post-content", "article", "div.content"]:
+            entry = soup_post.select_one(sel)
+            if entry:
+                conteudo = entry.get_text(separator="\n", strip=True)
+                break
+    except Exception:
+        pass  # Usa o conteúdo do RSS se o post não carregar
 
-        soup = BeautifulSoup(html, "html.parser")
+    # Aplicar filtros
+    genero = _detectar_genero(f"{title} {conteudo}")
+    faixa_etaria = _detectar_faixa_etaria(conteudo)
 
-        # Remover scripts, estilos e navegação
-        for tag in soup(["script", "style", "nav", "footer", "header"]):
-            tag.decompose()
+    if not _atende_criterios_genero(genero, f"{title} {conteudo}"):
+        return None
+    if not _atende_criterios_idade(faixa_etaria, conteudo):
+        return None
+    if _excluir_por_etnia(f"{title} {conteudo}"):
+        return None
 
-        # Estratégia 1: blocos com palavras-chave de casting
-        candidatos = soup.find_all(
-            lambda t: t.name in ["article", "div", "li", "section"]
-            and any(kw in (t.get_text(" ", strip=True).lower())
-                    for kw in ["casting", "audição", "seleção", "elenco",
-                               "ator", "atriz", "cantor", "performer",
-                               "audition", "open call", "teste"])
-            and len(t.get_text(strip=True)) > 50
+    # Extrair campos
+    data_inscricao = _extrair_data_inscricao(conteudo)
+    data_teste = _extrair_data_teste(conteudo)
+    cache = _extrair_cache(conteudo)
+    o_que_levar = _extrair_o_que_levar(conteudo)
+    local = _extrair_local(conteudo)
+    email_contato = _extrair_email(conteudo)
+    link_inscricao = _extrair_link_inscricao(conteudo, link)
+    categoria = _inferir_categoria(title, conteudo) if categoria_default == "Outros" else categoria_default
+    perfil = _extrair_perfil_completo(conteudo)
+
+    return {
+        "id": link,
+        "titulo": title,
+        "descricao": desc[:500],
+        "fonte": fonte,
+        "categoria": categoria,
+        "link": link,
+        "data_publicacao": pub_date,
+        "genero": genero,
+        "faixa_etaria": faixa_etaria,
+        "data_inscricao": data_inscricao,
+        "data_teste": data_teste,
+        "cache": cache,
+        "o_que_levar": o_que_levar,
+        "local": local,
+        "email_contato": email_contato,
+        "link_inscricao": link_inscricao,
+        "perfil_procurado": perfil,
+    }
+
+
+def _buscar_rss_feeds() -> List[Dict]:
+    """Busca oportunidades via feeds RSS de todas as fontes configuradas."""
+    resultados: List[Dict] = []
+    vistos: set = set()
+
+    for feed_config in RSS_FEEDS:
+        fonte = feed_config["nome"]
+        url = feed_config["url"]
+        cat_default = feed_config["categoria_default"]
+
+        try:
+            r = requests.get(url, timeout=TIMEOUT, headers=HEADERS)
+            if r.status_code != 200:
+                logger.warning(f"Feed {fonte} retornou {r.status_code}")
+                continue
+
+            root = ET.fromstring(r.content)
+            items = root.findall(".//item")
+
+            for item in items:
+                link = (item.findtext("link") or "").strip()
+                if link in vistos:
+                    continue
+                vistos.add(link)
+
+                opp = _processar_item_rss(item, fonte, cat_default)
+                if opp:
+                    resultados.append(opp)
+
+            logger.info(f"  {fonte} ({url.split('/')[-2]}): {len([o for o in resultados if o['fonte'] == fonte])} oportunidades")
+
+        except Exception as e:
+            logger.warning(f"Erro no feed {fonte} ({url}): {e}")
+
+    return resultados
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SCRAPER 2: ELENCO DIGITAL (cards estruturados)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _buscar_elenco_digital() -> List[Dict]:
+    """Busca casting calls estruturados do Elenco Digital."""
+    resultados: List[Dict] = []
+    try:
+        r = requests.get(
+            "https://elencodigital.com.br/casting-calls",
+            timeout=TIMEOUT, headers=HEADERS
         )
+        if r.status_code != 200:
+            return resultados
 
-        vistos = set()
-        for item in candidatos[:30]:  # limitar para não sobrecarregar
-            titulo_tag = item.find(["h1", "h2", "h3", "h4", "a"])
-            if not titulo_tag:
+        soup = BeautifulSoup(r.content, "html.parser")
+        cards = soup.find_all("div", class_="casting-call")
+
+        for card in cards:
+            # Hashtag / ID
+            hashtag_el = card.find("h2", class_="casting-call__hashtag")
+            hashtag = hashtag_el.get_text(strip=True) if hashtag_el else ""
+
+            # Título
+            title_el = card.find("h3", class_="casting-call__title")
+            titulo = title_el.get_text(strip=True) if title_el else hashtag
+
+            if not titulo:
                 continue
-            titulo = titulo_tag.get_text(strip=True)[:200]
-            if not titulo or titulo in vistos:
+
+            # Diretor/Produtora
+            company_el = card.find("small", class_="casting-call__company")
+            diretor = company_el.get_text(strip=True).replace("Por:", "").strip() if company_el else ""
+
+            # Datas
+            created_el = card.find("small", class_="casting-call_created_at")
+            data_listagem = created_el.get_text(strip=True).replace("Listado em:", "").strip() if created_el else ""
+            expires_el = card.find("small", class_="casting-call_expires_at")
+            data_expira = expires_el.get_text(strip=True).replace("Expira em:", "").strip() if expires_el else ""
+
+            # Tags estruturadas
+            tags = card.find_all("span", class_="casting-call-tag")
+            campos_tag: Dict[str, str] = {}
+            for tag in tags:
+                label_el = tag.find("span", class_="casting-call-tag__label")
+                value_el = tag.find("span", class_="casting-call-tag__value")
+                if label_el and value_el:
+                    campos_tag[label_el.get_text(strip=True).lower()] = value_el.get_text(strip=True)
+
+            genero = campos_tag.get("gênero", campos_tag.get("genero", "Não especificado"))
+            faixa_etaria = campos_tag.get("faixa etária", campos_tag.get("faixa etaria", ""))
+            etnia = campos_tag.get("etnia", "")
+            idioma = campos_tag.get("idioma", "")
+            local = campos_tag.get("localização", campos_tag.get("localizacao", ""))
+
+            # Descrição
+            desc_el = card.find("div", class_="casting-call__description")
+            descricao = desc_el.get_text(strip=True) if desc_el else ""
+
+            # Link
+            link_el = card.find("a", class_="casting-call__link")
+            link = link_el.get("href", "") if link_el else ""
+            if link and not link.startswith("http"):
+                link = f"https://elencodigital.com.br{link}"
+
+            conteudo = f"{titulo} {descricao} {etnia} {idioma} {local}"
+
+            # Filtrar etnia incompatível diretamente do campo estruturado
+            if etnia and ETNIAS_INCOMPATIVEIS.search(etnia):
+                if not CONTRA_INDICADORES.search(etnia):
+                    continue
+
+            # Aplicar filtros
+            if not _atende_criterios_genero(genero, conteudo):
                 continue
-            vistos.add(titulo)
+            if not _atende_criterios_idade(faixa_etaria, conteudo):
+                continue
+            if _excluir_por_etnia(conteudo):
+                continue
 
-            texto_completo = item.get_text(" ", strip=True)
-            link_tag = item.find("a", href=True)
-            link = ""
-            if link_tag:
-                href = link_tag["href"]
-                if href.startswith("http"):
-                    link = href
-                elif href.startswith("/"):
-                    from urllib.parse import urlparse
-                    base = urlparse(url)
-                    link = f"{base.scheme}://{base.netloc}{href}"
+            # Construir perfil
+            perfil_parts = []
+            if genero and genero != "Não especificado":
+                perfil_parts.append(f"Gênero: {genero}")
+            if faixa_etaria:
+                perfil_parts.append(f"Idade: {faixa_etaria}")
+            if etnia:
+                perfil_parts.append(f"Etnia: {etnia}")
+            if idioma:
+                perfil_parts.append(f"Idioma: {idioma}")
+            perfil = " | ".join(perfil_parts)
 
-            oportunidade = {
+            categoria = _inferir_categoria(titulo, descricao)
+
+            resultados.append({
+                "id": link or f"ed_{hashtag}",
                 "titulo": titulo,
-                "descricao": texto_completo[:500],
-                "genero": "",
-                "idade_minima": "",
-                "idade_maxima": "",
-                "aparencia": "",
-                "data_inscricao_inicio": "",
-                "data_inscricao_fim": _extrair_data(texto_completo) or "",
-                "data_teste": "",
-                "data_gravacao": "",
-                "cache": _extrair_cache(texto_completo) or "",
-                "o_que_levar": "",
-                "endereco": _extrair_endereco(texto_completo) or "",
-                "link_inscricao": link,
-                "link_formulario": "",
-                "email_contato": "",
+                "descricao": descricao[:500],
+                "fonte": "Elenco Digital",
                 "categoria": categoria,
-                "localizacao": "",
-                "link_detalhe": link,
-                "fonte": nome_fonte,
-            }
+                "link": link,
+                "data_publicacao": data_listagem,
+                "genero": genero,
+                "faixa_etaria": faixa_etaria,
+                "data_inscricao": data_expira,
+                "data_teste": "",
+                "cache": campos_tag.get("cachê", campos_tag.get("cache", "")),
+                "o_que_levar": "",
+                "local": local,
+                "email_contato": "",
+                "link_inscricao": link,
+                "perfil_procurado": perfil,
+            })
 
-            t = texto_completo.lower()
-            emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', texto_completo)
-            if emails:
-                oportunidade["email_contato"] = emails[0]
-
-            if any(x in t for x in ["homem", "masculino", "male", "man", "men"]):
-                oportunidade["genero"] = "Homem"
-            elif any(x in t for x in ["mulher", "feminino", "female", "woman", "women"]):
-                oportunidade["genero"] = "Mulher"
-            else:
-                oportunidade["genero"] = "Não especificado"
-
-            oportunidades.append(oportunidade)
-
-        time.sleep(SLEEP)
     except Exception as e:
-        logger.debug(f"Erro ao scrape {nome_fonte}: {e}")
+        logger.warning(f"Erro no Elenco Digital: {e}")
 
-    return oportunidades
-
-
-# ─────────────────────────────────────────────────────────────────
-# Scrapers por fonte
-# ─────────────────────────────────────────────────────────────────
-
-def scrape_guia_do_ator(session: requests.Session) -> List[Dict]:
-    """Scrape de oportunidades do Guia do Ator."""
-    oportunidades = []
-    try:
-        url = "https://www.guiadoator.com.br/casting"
-        html = _get(url, session)
-        if not html:
-            return oportunidades
-        
-        soup = BeautifulSoup(html, "html.parser")
-        
-        # Procurar por elementos de casting (estrutura pode variar)
-        for item in soup.find_all(class_=re.compile(r"casting|opportunity|oportunidade", re.IGNORECASE)):
-            titulo = item.find(class_=re.compile(r"title|titulo|name", re.IGNORECASE))
-            descricao = item.find(class_=re.compile(r"description|descricao|details", re.IGNORECASE))
-            
-            if titulo:
-                oportunidade = {
-                    "titulo": titulo.get_text(strip=True),
-                    "descricao": descricao.get_text(strip=True) if descricao else "",
-                    "genero": "",
-                    "idade_minima": "",
-                    "idade_maxima": "",
-                    "aparencia": "",
-                    "data_inscricao_inicio": "",
-                    "data_inscricao_fim": "",
-                    "data_teste": "",
-                    "data_gravacao": "",
-                    "cache": "",
-                    "o_que_levar": "",
-                    "endereco": "",
-                    "link_inscricao": "",
-                    "link_formulario": "",
-                    "email_contato": "",
-                    "categoria": _categorizar_oportunidade(titulo.get_text(strip=True), descricao.get_text(strip=True) if descricao else ""),
-                    "localizacao": "",
-                    "link_detalhe": item.find("a")["href"] if item.find("a") else "",
-                    "fonte": "Guia do Ator"
-                }
-                
-                # Extrair informações adicionais
-                texto_completo = f"{oportunidade['titulo']} {oportunidade['descricao']}"
-                oportunidade["cache"] = _extrair_cache(texto_completo) or ""
-                oportunidade["endereco"] = _extrair_endereco(texto_completo) or ""
-                
-                # Extrair datas
-                oportunidade["data_inscricao_fim"] = _extrair_data(texto_completo) or ""
-                
-                # Extrair emails
-                emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', texto_completo)
-                if emails:
-                    oportunidade["email_contato"] = emails[0]
-                
-                # Extrair gênero
-                if "homem" in texto_completo.lower() or "masculino" in texto_completo.lower():
-                    oportunidade["genero"] = "Homem"
-                elif "mulher" in texto_completo.lower() or "feminino" in texto_completo.lower():
-                    oportunidade["genero"] = "Mulher"
-                else:
-                    oportunidade["genero"] = "Não especificado"
-                
-                oportunidades.append(oportunidade)
-        
-        time.sleep(SLEEP)
-    except Exception as e:
-        logger.debug(f"Erro ao scrape Guia do Ator: {e}")
-    
-    return oportunidades
+    return resultados
 
 
-def scrape_elenco_digital(session: requests.Session) -> List[Dict]:
-    """Scrape de oportunidades do Elenco Digital."""
-    oportunidades = []
-    try:
-        url = "https://www.elencdigital.com.br"
-        html = _get(url, session)
-        if not html:
-            return oportunidades
-        
-        soup = BeautifulSoup(html, "html.parser")
-        
-        # Procurar por elementos de casting
-        for item in soup.find_all(class_=re.compile(r"casting|job|opportunity", re.IGNORECASE)):
-            titulo = item.find(["h2", "h3", "h4"])
-            
-            if titulo:
-                oportunidade = {
-                    "titulo": titulo.get_text(strip=True),
-                    "descricao": item.get_text(strip=True),
-                    "genero": "",
-                    "idade_minima": "",
-                    "idade_maxima": "",
-                    "aparencia": "",
-                    "data_inscricao_inicio": "",
-                    "data_inscricao_fim": "",
-                    "data_teste": "",
-                    "data_gravacao": "",
-                    "cache": "",
-                    "o_que_levar": "",
-                    "endereco": "",
-                    "link_inscricao": "",
-                    "link_formulario": "",
-                    "email_contato": "",
-                    "categoria": _categorizar_oportunidade(titulo.get_text(strip=True), item.get_text(strip=True)),
-                    "localizacao": "",
-                    "link_detalhe": item.find("a")["href"] if item.find("a") else "",
-                    "fonte": "Elenco Digital"
-                }
-                
-                texto_completo = f"{oportunidade['titulo']} {oportunidade['descricao']}"
-                oportunidade["cache"] = _extrair_cache(texto_completo) or ""
-                oportunidade["endereco"] = _extrair_endereco(texto_completo) or ""
-                oportunidade["data_inscricao_fim"] = _extrair_data(texto_completo) or ""
-                
-                emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', texto_completo)
-                if emails:
-                    oportunidade["email_contato"] = emails[0]
-                
-                if "homem" in texto_completo.lower() or "masculino" in texto_completo.lower():
-                    oportunidade["genero"] = "Homem"
-                elif "mulher" in texto_completo.lower() or "feminino" in texto_completo.lower():
-                    oportunidade["genero"] = "Mulher"
-                else:
-                    oportunidade["genero"] = "Não especificado"
-                
-                oportunidades.append(oportunidade)
-        
-        time.sleep(SLEEP)
-    except Exception as e:
-        logger.debug(f"Erro ao scrape Elenco Digital: {e}")
-    
-    return oportunidades
+# ─────────────────────────────────────────────────────────────────────────────
+# FUNÇÕES AUXILIARES DE EXTRAÇÃO
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _detectar_genero(conteudo: str) -> str:
+    tc = conteudo.lower()
+    if re.search(r"\bhomens?\s+e\s+mulheres?\b|\bambos\b|\btodos\s+os\s+gêneros?\b", tc):
+        return "Homens e Mulheres"
+    if re.search(r"\b(somente|apenas)\s+(mulheres?|feminino)\b", tc):
+        return "Mulher"
+    if re.search(r"\b(somente|apenas)\s+(homens?|masculino)\b", tc):
+        return "Homem"
+    if re.search(r"\bmulheres?\b", tc) and not re.search(r"\bhomens?\b", tc):
+        if re.search(r"\batriz|atrizes\b", tc) and not re.search(r"\bator|atores\b", tc):
+            return "Mulher"
+    if re.search(r"\bhomens?\b", tc) and not re.search(r"\bmulheres?\b", tc):
+        return "Homem"
+    return "Não especificado"
 
 
-def scrape_oppah(session: requests.Session) -> List[Dict]:
-    """Scrape de oportunidades do Oppah."""
-    oportunidades = []
-    try:
-        url = "https://www.oppah.com.br"
-        html = _get(url, session)
-        if not html:
-            return oportunidades
-        
-        soup = BeautifulSoup(html, "html.parser")
-        
-        for item in soup.find_all(class_=re.compile(r"casting|opportunity|job", re.IGNORECASE)):
-            titulo = item.find(["h2", "h3", "a"])
-            
-            if titulo:
-                oportunidade = {
-                    "titulo": titulo.get_text(strip=True),
-                    "descricao": item.get_text(strip=True),
-                    "genero": "",
-                    "idade_minima": "",
-                    "idade_maxima": "",
-                    "aparencia": "",
-                    "data_inscricao_inicio": "",
-                    "data_inscricao_fim": "",
-                    "data_teste": "",
-                    "data_gravacao": "",
-                    "cache": "",
-                    "o_que_levar": "",
-                    "endereco": "",
-                    "link_inscricao": "",
-                    "link_formulario": "",
-                    "email_contato": "",
-                    "categoria": _categorizar_oportunidade(titulo.get_text(strip=True), item.get_text(strip=True)),
-                    "localizacao": "",
-                    "link_detalhe": item.find("a")["href"] if item.find("a") else "",
-                    "fonte": "Oppah"
-                }
-                
-                texto_completo = f"{oportunidade['titulo']} {oportunidade['descricao']}"
-                oportunidade["cache"] = _extrair_cache(texto_completo) or ""
-                oportunidade["endereco"] = _extrair_endereco(texto_completo) or ""
-                oportunidade["data_inscricao_fim"] = _extrair_data(texto_completo) or ""
-                
-                emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', texto_completo)
-                if emails:
-                    oportunidade["email_contato"] = emails[0]
-                
-                if "homem" in texto_completo.lower() or "masculino" in texto_completo.lower():
-                    oportunidade["genero"] = "Homem"
-                elif "mulher" in texto_completo.lower() or "feminino" in texto_completo.lower():
-                    oportunidade["genero"] = "Mulher"
-                else:
-                    oportunidade["genero"] = "Não especificado"
-                
-                oportunidades.append(oportunidade)
-        
-        time.sleep(SLEEP)
-    except Exception as e:
-        logger.debug(f"Erro ao scrape Oppah: {e}")
-    
-    return oportunidades
+def _detectar_faixa_etaria(conteudo: str) -> str:
+    fa_m = re.search(r"(\d{1,2})\s*(?:a|ao?|[-–])\s*(\d{1,2})\s*anos?", conteudo, re.IGNORECASE)
+    if fa_m:
+        return f"{fa_m.group(1)} - {fa_m.group(2)}"
+    fa_m2 = re.search(r"(?:a partir|acima|mais)\s+de\s+(\d{1,2})\s*anos?", conteudo, re.IGNORECASE)
+    if fa_m2:
+        return f"A partir de {fa_m2.group(1)}"
+    return ""
 
 
-def buscar_casting(enriquecer_detalhes: bool = False, max_enriquecimento: int = 30) -> Tuple[List[Dict], List[str]]:
+def _extrair_data_inscricao(conteudo: str) -> str:
+    for pat in [
+        r"inscri[çc][õo]es?\s+at[eé]\s+([\d/]+(?:\s+de\s+\w+(?:\s+de\s+\d{4})?)?)",
+        r"at[eé]\s+([\d]{1,2}[/\-]\d{1,2}(?:[/\-]\d{2,4})?)",
+        r"at[eé]\s+(\d{1,2}\s+de\s+\w+(?:\s+de\s+\d{4})?)",
+        r"prazo[:\s]+([^\n.]{5,40})",
+        r"deadline[:\s]+([^\n.]{5,40})",
+    ]:
+        m = re.search(pat, conteudo, re.IGNORECASE)
+        if m:
+            return m.group(1).strip()
+    return ""
+
+
+def _extrair_data_teste(conteudo: str) -> str:
+    for pat in [
+        r"(?:data\s+do\s+teste|data\s+da\s+audi[çc][aã]o|data\s+da\s+sele[çc][aã]o)[:\s]+([^\n.]{5,50})",
+        r"(?:teste|audi[çc][aã]o|sele[çc][aã]o)\s+(?:ser[aá]\s+)?(?:realizada?|ocorrer[aá])\s+(?:em\s+|no\s+dia\s+)?([^\n.]{5,40})",
+        r"(?:dia|data)[:\s]+(\d{1,2}[/\-]\d{1,2}(?:[/\-]\d{2,4})?)",
+    ]:
+        m = re.search(pat, conteudo, re.IGNORECASE)
+        if m:
+            return m.group(1).strip()
+    return ""
+
+
+def _extrair_cache(conteudo: str) -> str:
+    m = re.search(
+        r"R\$\s*[\d.,]+(?:\s*(?:brutos?|líquidos?|por\s+dia|diária|por\s+hora|mensais?|por\s+espetáculo))?",
+        conteudo, re.IGNORECASE
+    )
+    if m:
+        return m.group(0).strip()
+    # Cachê em outras moedas (para trabalhos no exterior)
+    m2 = re.search(
+        r"(?:USD|EUR|GBP|\$|€|£)\s*[\d.,]+(?:\s*(?:per\s+day|per\s+show|per\s+week))?",
+        conteudo, re.IGNORECASE
+    )
+    if m2:
+        return m2.group(0).strip()
+    return ""
+
+
+def _extrair_o_que_levar(conteudo: str) -> str:
+    m = re.search(
+        r"(?:levar|trazer|apresentar|enviar|trazer|preparar)[:\s]+([^\n.]{10,300})",
+        conteudo, re.IGNORECASE
+    )
+    if m:
+        return m.group(1).strip()
+    # Alternativa: buscar lista de requisitos
+    m2 = re.search(
+        r"(?:material\s+necessário|documentos?\s+necessários?|o\s+que\s+trazer)[:\s]+([^\n.]{10,300})",
+        conteudo, re.IGNORECASE
+    )
+    if m2:
+        return m2.group(1).strip()
+    return ""
+
+
+def _extrair_local(conteudo: str) -> str:
+    m = re.search(
+        r"(?:local|endere[çc]o|local\s+do\s+teste|local\s+da\s+audi[çc][aã]o)[:\s]+([^\n.]{10,150})",
+        conteudo, re.IGNORECASE
+    )
+    if m:
+        return m.group(1).strip()
+    # Buscar endereço direto
+    m2 = re.search(
+        r"(?:Rua|Avenida|Av\.|Praça|Alameda|Travessa)\s+[^,\n]+(?:,\s*n[º°]?\s*\d+)?(?:,\s*[^,\n]+)?",
+        conteudo, re.IGNORECASE
+    )
+    if m2:
+        return m2.group(0).strip()
+    return ""
+
+
+def _extrair_email(conteudo: str) -> str:
+    m = re.search(r"[\w.+-]+@[\w.-]+\.\w{2,}", conteudo)
+    return m.group(0) if m else ""
+
+
+def _extrair_link_inscricao(conteudo: str, link_original: str) -> str:
+    # Priorizar links de formulários conhecidos
+    m = re.search(
+        r"(https?://(?:docs\.google\.com/forms?|forms\.gle|bit\.ly|"
+        r"typeform\.com|tally\.so|jotform\.com|surveymonkey\.com)\S+)",
+        conteudo, re.IGNORECASE
+    )
+    if m:
+        return m.group(1).strip().rstrip(".,)")
+    return link_original
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FUNÇÃO PRINCIPAL
+# ─────────────────────────────────────────────────────────────────────────────
+
+def buscar_casting() -> Tuple[List[Dict], List[str]]:
     """
-    Busca oportunidades de casting de múltiplas fontes e filtra por critérios.
-
-    Retorna:
-        (lista_de_oportunidades, lista_de_erros)
+    Executa todos os scrapers e retorna lista consolidada de oportunidades filtradas.
+    Retorna: (lista_de_oportunidades, lista_de_erros)
     """
-    oportunidades = []
-    erros = []
-    
-    session = requests.Session()
-    
-    logger.info("Buscando casting no Guia do Ator...")
+    logger.info("Iniciando busca de oportunidades de casting...")
+    todas: List[Dict] = []
+    ids_vistos: set = set()
+    erros: List[str] = []
+
+    # 1. RSS Feeds (Guia do Ator + A Broadway é Aqui + Navio Cabaré)
+    logger.info("Buscando via RSS feeds...")
     try:
-        oportunidades.extend(scrape_guia_do_ator(session))
+        rss = _buscar_rss_feeds()
+        logger.info(f"  → {len(rss)} oportunidades via RSS")
+        for op in rss:
+            if op["id"] not in ids_vistos:
+                ids_vistos.add(op["id"])
+                todas.append(op)
     except Exception as e:
-        erros.append(f"Guia do Ator: {str(e)[:100]}")
-    
-    logger.info("Buscando casting no Elenco Digital...")
+        erros.append(f"RSS Feeds: {str(e)[:100]}")
+
+    # 2. Elenco Digital (cards estruturados)
+    logger.info("Buscando Elenco Digital...")
     try:
-        oportunidades.extend(scrape_elenco_digital(session))
+        ed = _buscar_elenco_digital()
+        logger.info(f"  → {len(ed)} oportunidades")
+        for op in ed:
+            if op["id"] not in ids_vistos:
+                ids_vistos.add(op["id"])
+                todas.append(op)
     except Exception as e:
         erros.append(f"Elenco Digital: {str(e)[:100]}")
-    
-    logger.info("Buscando casting no Oppah...")
-    try:
-        oportunidades.extend(scrape_oppah(session))
-    except Exception as e:
-        erros.append(f"Oppah: {str(e)[:100]}")
 
-    # Executar autodescoberta de novos perfis
-    try:
-        from scripts.autodescoberta import executar_autodescoberta
-        fontes_descobertas = executar_autodescoberta(FONTES_INSTAGRAM)
-        logger.info(f"Autodescoberta: {len(fontes_descobertas)} fonte(s) no banco de descobertas")
-    except Exception as e:
-        fontes_descobertas = {}
-        logger.warning(f"Autodescoberta falhou (não crítico): {e}")
-
-    # Combinar fontes fixas com fontes descobertas automaticamente
-    todas_fontes = {**FONTES_INSTAGRAM, **fontes_descobertas}
-
-    # Buscar em todas as fontes externas identificadas (sites dos perfis seguidos + descobertas)
-    logger.info(f"Buscando em {len(todas_fontes)} fontes externas identificadas...")
-    for handle, info in todas_fontes.items():
-        nome = info["nome"]
-        url  = info["url"]
-        cat  = info["categoria"]
-        try:
-            resultados = scrape_fonte_generica(url, nome, cat, session)
-            if resultados:
-                logger.info(f"  {nome}: {len(resultados)} oportunidade(s)")
-            oportunidades.extend(resultados)
-        except Exception as e:
-            erros.append(f"{nome}: {str(e)[:80]}")
-
-    # Filtrar por critérios
-    oportunidades_filtradas = []
-    for opp in oportunidades:
-        # Verificar gênero
-        if not _atende_criterios_genero(opp.get("genero", "")):
-            continue
-
-        # Verificar idade/aparência
-        if not _atende_criterios_idade_aparencia(opp):
-            continue
-
-        # Verificar exclusão étnica (excluir seleções exclusivas para etnias incompatíveis)
-        texto_completo = f"{opp.get('titulo', '')} {opp.get('descricao', '')}"
-        if _excluir_por_etnia(texto_completo):
-            logger.debug(f"Excluído por etnia exclusiva: {opp.get('titulo', '')[:60]}")
-            continue
-
-        # Enriquecer com detalhamento completo do perfil procurado
-        perfil = _extrair_perfil_completo(texto_completo)
-        if perfil:
-            opp["perfil_procurado"] = perfil
-
-        oportunidades_filtradas.append(opp)
-    
-    logger.info(f"Total de oportunidades encontradas: {len(oportunidades)}")
-    logger.info(f"Total após filtro: {len(oportunidades_filtradas)}")
-    
-    return oportunidades_filtradas, erros
+    logger.info(f"Total de oportunidades após filtros: {len(todas)}")
+    return todas, erros
 
 
 def filtrar_novas_oportunidades(
     oportunidades: List[Dict],
-    historico: Dict
+    historico: Dict,
 ) -> Tuple[List[Dict], Dict]:
-    """
-    Filtra apenas oportunidades novas (não alertadas antes).
-    
-    Retorna:
-        (lista_de_novas_oportunidades, historico_atualizado)
-    """
-    novas = []
+    """Retorna apenas oportunidades novas (não alertadas antes) e atualiza o histórico."""
+    novas: List[Dict] = []
     historico_atualizado = historico.copy()
-    
+    hoje = str(__import__("datetime").date.today())
+
     for opp in oportunidades:
-        # Gerar ID único para a oportunidade
-        opp_id = f"{opp.get('titulo', '')}|{opp.get('fonte', '')}|{opp.get('link_detalhe', '')}"
-        opp_id_hash = str(hash(opp_id))
-        
-        if opp_id_hash not in historico_atualizado:
+        opp_id = opp.get("id", "")
+        if not opp_id:
+            continue
+        if opp_id not in historico_atualizado:
             novas.append(opp)
-            historico_atualizado[opp_id_hash] = {
+            historico_atualizado[opp_id] = {
                 "titulo": opp.get("titulo", ""),
                 "fonte": opp.get("fonte", ""),
-                "data_alerta": str(__import__('datetime').date.today())
+                "data_alerta": hoje,
             }
-    
+
+    # Limpar histórico com mais de 90 dias
+    from datetime import date, timedelta
+    limite = date.today() - timedelta(days=90)
+    historico_atualizado = {
+        k: v for k, v in historico_atualizado.items()
+        if v.get("data_alerta", str(hoje)) >= str(limite)
+    }
     return novas, historico_atualizado
 
 
 def formatar_email_casting(oportunidades: List[Dict], erros: List[str]) -> str:
-    """Formata o email de alerta de novas oportunidades de casting."""
+    """Formata o email HTML de alerta de novas oportunidades de casting."""
     from datetime import date
     hoje = date.today().strftime("%d/%m/%Y")
-    
+
+    # Agrupar por categoria
+    por_categoria: Dict[str, List[Dict]] = {}
+    for opp in oportunidades:
+        cat = opp.get("categoria", "Outros")
+        por_categoria.setdefault(cat, []).append(opp)
+
+    ordem_cats = ["Teatro", "Audiovisual", "Navios/Cruzeiros", "Resorts/Hotéis", "Outros"]
+
     linhas = [
         f"ALERTA DE OPORTUNIDADES DE CASTING/AUDIÇÕES — {hoje}",
-        f"Perfil: Homem | Branco/Caucasiano | Descendente de italiano | Fala português, inglês e espanhol",
-        f"Critérios de idade: Acima de 40 anos OU aparência 35-50 anos OU não especificado",
-        f"Excluídas: seleções exclusivas para negros, pardos, orientais, indígenas ou outras etnias incompatíveis",
-        f"Total de oportunidades novas encontradas: {len(oportunidades)}",
-        "=" * 80,
+        f"Perfil: Homem | Branco/Caucasiano | Descendente de italiano | Português, inglês e espanhol",
+        f"Critérios: Acima de 40 anos OU aparência 35-50 anos OU não especificado",
+        f"Excluídas: seleções exclusivas para etnias incompatíveis com o perfil",
+        f"Total de oportunidades novas: {len(oportunidades)}",
         "",
     ]
-    
-    if not oportunidades:
-        linhas.append("Nenhuma oportunidade nova encontrada hoje que atenda aos critérios.")
-        linhas.append("")
-    else:
-        # Agrupar por categoria
-        por_categoria = {}
-        for opp in oportunidades:
-            cat = opp.get("categoria", "Geral")
-            if cat not in por_categoria:
-                por_categoria[cat] = []
-            por_categoria[cat].append(opp)
-        
-        for categoria in sorted(por_categoria.keys()):
-            linhas.append(f"\n{'=' * 80}")
-            linhas.append(f"CATEGORIA: {categoria}")
-            linhas.append(f"{'=' * 80}\n")
-            
-            for i, opp in enumerate(por_categoria[categoria], 1):
-                linhas.append(f"[{categoria[0]}{i}] {opp.get('titulo', 'Sem título')}")
-                linhas.append("-" * 75)
-                
-                descricao = opp.get("descricao", "")
-                if descricao:
-                    linhas.append(f"  Descrição      : {descricao[:200]}")
-                
-                genero = opp.get("genero", "")
-                if genero:
-                    linhas.append(f"  Gênero         : {genero}")
-                
-                idade_min = opp.get("idade_minima", "")
-                idade_max = opp.get("idade_maxima", "")
-                if idade_min or idade_max:
-                    idade_str = f"{idade_min} a {idade_max}" if idade_min and idade_max else (idade_min or idade_max)
-                    linhas.append(f"  Idade          : {idade_str}")
-                
-                aparencia = opp.get("aparencia", "")
-                if aparencia:
-                    linhas.append(f"  Aparência      : {aparencia}")
 
-                perfil_procurado = opp.get("perfil_procurado", "")
-                if perfil_procurado:
-                    # Exibir cada item do perfil em linha separada para facilitar leitura
-                    itens_perfil = perfil_procurado.split(" | ")
-                    linhas.append(f"  Perfil procurado:")
-                    for item in itens_perfil:
-                        linhas.append(f"    • {item}")
-                
-                cache = opp.get("cache", "")
-                if cache:
-                    linhas.append(f"  Cachê          : {cache}")
-                
-                o_que_levar = opp.get("o_que_levar", "")
-                if o_que_levar:
-                    linhas.append(f"  O que levar    : {o_que_levar}")
-                
-                endereco = opp.get("endereco", "")
-                if endereco:
-                    linhas.append(f"  Endereço       : {endereco}")
-                
-                di_ini = opp.get("data_inscricao_inicio", "")
-                di_fim = opp.get("data_inscricao_fim", "")
-                if di_ini and di_fim:
-                    linhas.append(f"  Inscrições     : {di_ini} a {di_fim}")
-                elif di_fim:
-                    linhas.append(f"  Inscrições até : {di_fim}")
-                
-                data_teste = opp.get("data_teste", "")
-                if data_teste:
-                    linhas.append(f"  Data do teste  : {data_teste}")
-                
-                data_gravacao = opp.get("data_gravacao", "")
-                if data_gravacao:
-                    linhas.append(f"  Data gravação  : {data_gravacao}")
-                
-                link_inscricao = opp.get("link_inscricao", "")
-                if link_inscricao:
-                    linhas.append(f"  Link inscrição : {link_inscricao}")
-                
-                link_formulario = opp.get("link_formulario", "")
-                if link_formulario:
-                    linhas.append(f"  Link formulário: {link_formulario}")
-                
-                email_contato = opp.get("email_contato", "")
-                if email_contato:
-                    linhas.append(f"  Email contato  : {email_contato}")
-                
-                localizacao = opp.get("localizacao", "")
-                if localizacao:
-                    linhas.append(f"  Localização    : {localizacao}")
-                
-                link_detalhe = opp.get("link_detalhe", "")
-                if link_detalhe:
-                    linhas.append(f"  Mais detalhes  : {link_detalhe}")
-                
-                fonte = opp.get("fonte", "")
-                if fonte:
-                    linhas.append(f"  Fonte          : {fonte}")
-                
+    for cat in ordem_cats:
+        if cat not in por_categoria:
+            continue
+        opps_cat = por_categoria[cat]
+        linhas.append(f"{'='*60}")
+        linhas.append(f"  {cat.upper()} ({len(opps_cat)} oportunidade(s))")
+        linhas.append(f"{'='*60}")
+        linhas.append("")
+
+        for opp in opps_cat:
+            linhas.append(f"▶ {opp['titulo']}")
+            linhas.append(f"  Fonte: {opp['fonte']}")
+
+            if opp.get("perfil_procurado"):
+                linhas.append(f"  Perfil procurado: {opp['perfil_procurado']}")
+            if opp.get("data_inscricao"):
+                linhas.append(f"  Inscrições até: {opp['data_inscricao']}")
+            if opp.get("data_teste"):
+                linhas.append(f"  Data do teste/audição: {opp['data_teste']}")
+            if opp.get("cache"):
+                linhas.append(f"  Cachê: {opp['cache']}")
+            if opp.get("o_que_levar"):
+                linhas.append(f"  O que levar/apresentar: {opp['o_que_levar']}")
+            if opp.get("local"):
+                linhas.append(f"  Local/Endereço: {opp['local']}")
+            if opp.get("email_contato"):
+                linhas.append(f"  Email de contato: {opp['email_contato']}")
+            if opp.get("link_inscricao") and opp["link_inscricao"] != opp.get("link"):
+                linhas.append(f"  Link de inscrição: {opp['link_inscricao']}")
+            linhas.append(f"  Link completo: {opp['link']}")
+            if opp.get("descricao"):
+                linhas.append(f"  Resumo: {opp['descricao'][:300]}")
+            linhas.append("")
+
+    # Categorias não previstas
+    for cat, opps_cat in por_categoria.items():
+        if cat not in ordem_cats:
+            linhas.append(f"{'='*60}")
+            linhas.append(f"  {cat.upper()} ({len(opps_cat)} oportunidade(s))")
+            linhas.append(f"{'='*60}")
+            linhas.append("")
+            for opp in opps_cat:
+                linhas.append(f"▶ {opp['titulo']}")
+                linhas.append(f"  Fonte: {opp['fonte']}")
+                if opp.get("perfil_procurado"):
+                    linhas.append(f"  Perfil procurado: {opp['perfil_procurado']}")
+                if opp.get("data_inscricao"):
+                    linhas.append(f"  Inscrições até: {opp['data_inscricao']}")
+                if opp.get("data_teste"):
+                    linhas.append(f"  Data do teste/audição: {opp['data_teste']}")
+                if opp.get("cache"):
+                    linhas.append(f"  Cachê: {opp['cache']}")
+                if opp.get("o_que_levar"):
+                    linhas.append(f"  O que levar/apresentar: {opp['o_que_levar']}")
+                if opp.get("local"):
+                    linhas.append(f"  Local/Endereço: {opp['local']}")
+                if opp.get("email_contato"):
+                    linhas.append(f"  Email de contato: {opp['email_contato']}")
+                if opp.get("link_inscricao") and opp["link_inscricao"] != opp.get("link"):
+                    linhas.append(f"  Link de inscrição: {opp['link_inscricao']}")
+                linhas.append(f"  Link completo: {opp['link']}")
+                if opp.get("descricao"):
+                    linhas.append(f"  Resumo: {opp['descricao'][:300]}")
                 linhas.append("")
-    
-    linhas.append("=" * 80)
-    
+
     if erros:
-        linhas.append("\nAvisos técnicos:")
-        for e in erros[:10]:
-            linhas.append(f"  - {e}")
-        linhas.append("")
-    
-    linhas.append("\nEste email foi gerado automaticamente pelo sistema de alertas de casting.")
-    linhas.append("Apenas oportunidades NOVAS (não alertadas anteriormente) são incluídas.")
-    linhas.append("Repositório: https://github.com/contatohb/casting-alerts")
-    
+        linhas.append(f"{'─'*60}")
+        linhas.append(f"Avisos técnicos ({len(erros)} fonte(s) com erro):")
+        for e in erros:
+            linhas.append(f"  • {e}")
+
     return "\n".join(linhas)
-
-
-if __name__ == "__main__":
-    import warnings
-    warnings.filterwarnings("ignore")
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-    
-    oportunidades, erros = buscar_casting(enriquecer_detalhes=False)
-    print(f"\nTotal filtrado: {len(oportunidades)}")
-    for opp in oportunidades[:5]:
-        print(f"  - {opp['titulo'][:50]} | {opp['genero']} | {opp['fonte']}")
