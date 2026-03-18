@@ -1,0 +1,55 @@
+name: Weekly Filter Audit
+
+on:
+  schedule:
+    - cron: "0 8 * * 1"
+  workflow_dispatch:
+    inputs:
+      force_send:
+        description: "Forcar envio do relatorio mesmo sem anomalias"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+jobs:
+  audit:
+    name: Audit editorial filters
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install --quiet feedparser requests beautifulsoup4
+
+      - name: Run filter audit
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: |
+          cd scripts
+          if [ "${{ github.event.inputs.force_send }}" = "true" ]; then
+            python audit_filters.py --force
+          else
+            python audit_filters.py
+          fi
+        continue-on-error: true
+
+      - name: Upload audit history
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: audit-history-${{ github.run_number }}
+          path: data/audit_history.json
+          retention-days: 90
