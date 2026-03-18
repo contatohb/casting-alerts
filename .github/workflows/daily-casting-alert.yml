@@ -2,13 +2,7 @@ name: Daily Casting Alert
 on:
   schedule:
     - cron: '0 13 * * *'  # 10:00 BRT (13:00 UTC)
-  workflow_dispatch:
-    inputs:
-      force_send:
-        description: 'Forçar envio mesmo sem novas oportunidades'
-        required: false
-        default: 'false'
-        type: boolean
+  workflow_dispatch: {}
 permissions:
   contents: write
 jobs:
@@ -26,24 +20,20 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install requests beautifulsoup4 python-dotenv feedparser
+          python -m pip install requests beautifulsoup4 python-dotenv
       - name: Send daily casting alert
         env:
           MONITOR_RECIPIENT: huddsong@gmail.com
           GMAIL_SENDER: huddsong@gmail.com
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
         run: |
-          ARGS=""
-          if [ "${{ github.event.inputs.force_send }}" = "true" ]; then
-            ARGS="--force-send"
-          fi
-          cd scripts && python alerta_casting.py $ARGS
+          cd scripts && python alerta_casting.py
       - name: Commit updated seen history
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/casting_seen.json data/feeds_descobertos.json data/rss_check_timestamp.txt || true
-          git diff --cached --quiet || git commit -m "chore: update casting data [skip ci]"
+          git add data/casting_seen.json || true
+          git diff --cached --quiet || git commit -m "chore: update casting seen history [skip ci]"
           git pull --rebase origin main || true
           git push || true
       - name: Notify on failure
