@@ -1016,6 +1016,9 @@ SITES_CANDIDATOS = [
     {"nome": "Casting Brasil", "url": "https://castingbrasil.com.br", "categoria_default": "Outros"},
     {"nome": "Open Auditions UK", "url": "https://www.openauditions.uk", "categoria_default": "Outros"},
     {"nome": "Luz Casting", "url": "https://luzcasting.live", "categoria_default": "Audiovisual"},
+    {"nome": "SetVerso", "url": "https://setverso.com", "categoria_default": "Audiovisual"},
+    # Classificados Artísticos: apenas Instagram (@classificadosartisticos), sem site externo ou RSS
+    # Monitorado via autodescoberta quando/se lançar site ou RSS
 ]
 
 RSS_SUFFIXES = ["/feed/", "/feed", "/rss/", "/rss", "/rss.xml", "/feed.xml", "/?feed=rss2"]
