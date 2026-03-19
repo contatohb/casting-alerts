@@ -5,6 +5,8 @@ Alerta diário de novas oportunidades de casting.
 Executa o monitor_casting.py, filtra apenas oportunidades NOVAS
 (não alertadas antes) e envia email HTML premium via SMTP.
 
+Backend de persistência: Supabase (primário) com fallback para JSON local.
+
 Uso:
     python3 alerta_casting.py [--force-send] [--no-enrich]
 """
@@ -14,7 +16,8 @@ import json
 import logging
 import os
 import sys
-from datetime import date
+import time
+from datetime import date, datetime, timezone
 from typing import Dict, List
 
 logging.basicConfig(
@@ -39,9 +42,12 @@ except Exception:
 RECIPIENT = os.getenv("MONITOR_RECIPIENT", "huddsong@gmail.com")
 SEEN_PATH = os.path.join(_PROJECT_DIR, "data", "casting_seen.json")
 
+# Limiar de falhas consecutivas para enviar alerta de sistema
+ALERTA_FALHAS_CONSECUTIVAS = 2
+
 
 # ─────────────────────────────────────────────────────────────────
-# Histórico de oportunidades já alertadas
+# Histórico local (fallback quando Supabase indisponível)
 # ─────────────────────────────────────────────────────────────────
 
 def load_seen(path: str) -> dict:
@@ -111,6 +117,27 @@ def send_email(subject: str, body_html: str, body_text: str, recipient: str) -> 
         return False
 
 
+def send_alerta_falha(falhas: int, ultimo_sucesso: datetime = None) -> None:
+    """Envia email de alerta quando o sistema falha consecutivamente."""
+    if not GMAIL_APP_PASSWORD:
+        return
+
+    ultimo_str = (
+        ultimo_sucesso.strftime("%d/%m/%Y %H:%M") if ultimo_sucesso else "desconhecido"
+    )
+    assunto = f"[Casting] ⚠️ ALERTA: Sistema com falhas consecutivas ({falhas}x)"
+    corpo_html = f"""
+    <html><body style="font-family: Arial, sans-serif; padding: 20px;">
+    <h2 style="color: #c0392b;">⚠️ Alerta do Sistema de Casting</h2>
+    <p>O sistema de alertas de casting falhou <strong>{falhas} vezes consecutivas</strong>.</p>
+    <p><strong>Último envio bem-sucedido:</strong> {ultimo_str}</p>
+    <p>Verifique os logs no <a href="https://github.com/contatohb/casting-alerts/actions">GitHub Actions</a>.</p>
+    </body></html>
+    """
+    corpo_texto = f"Sistema de casting com {falhas} falhas consecutivas. Último sucesso: {ultimo_str}."
+    send_email(assunto, corpo_html, corpo_texto, RECIPIENT)
+
+
 # ─────────────────────────────────────────────────────────────────
 # Principal
 # ─────────────────────────────────────────────────────────────────
@@ -119,6 +146,7 @@ def main():
     import warnings
     warnings.filterwarnings("ignore")
 
+    inicio = time.time()
     force_send = "--force-send" in sys.argv
 
     today = date.today()
@@ -129,25 +157,59 @@ def main():
         from monitor_casting import (
             buscar_casting,
             filtrar_novas_oportunidades,
-            formatar_email_casting,
         )
         from email_template import gerar_email_html, gerar_email_texto
+        import supabase_client as sb
     except ImportError as e:
         logger.error(f"Erro ao importar módulos: {e}")
         return 1
 
+    # Verificar disponibilidade do Supabase
+    usar_supabase = sb.disponivel()
+    if usar_supabase:
+        logger.info("Supabase disponível — usando como backend de persistência.")
+    else:
+        logger.warning("Supabase indisponível — usando fallback JSON local.")
+
     # Buscar oportunidades
     logger.info("Buscando oportunidades de casting...")
-    oportunidades, erros = buscar_casting()
-    logger.info(f"Oportunidades filtradas: {len(oportunidades)}")
+    try:
+        oportunidades, erros = buscar_casting()
+        logger.info(f"Oportunidades filtradas: {len(oportunidades)}")
+    except Exception as e:
+        duracao = time.time() - inicio
+        logger.error(f"Erro crítico ao buscar oportunidades: {e}")
+        if usar_supabase:
+            sb.registrar_execucao(
+                status="falha",
+                duracao_segundos=duracao,
+                erro_mensagem=str(e),
+            )
+            falhas = sb.contar_falhas_consecutivas()
+            if falhas >= ALERTA_FALHAS_CONSECUTIVAS:
+                ultimo = sb.ultima_execucao_com_sucesso()
+                send_alerta_falha(falhas, ultimo)
+        return 1
 
-    # Carregar histórico e filtrar novas
-    seen = load_seen(SEEN_PATH)
-    novas, seen_atualizado = filtrar_novas_oportunidades(oportunidades, seen)
-    logger.info(f"Oportunidades novas (não alertadas antes): {len(novas)}")
-
-    # Salvar histórico atualizado
-    save_seen(seen_atualizado, SEEN_PATH)
+    # Determinar oportunidades novas (deduplicação)
+    if usar_supabase:
+        ids_vistos = sb.buscar_ids_vistos(dias=30)
+        novas = [op for op in oportunidades if op.get("id") not in ids_vistos]
+        logger.info(f"Oportunidades novas (Supabase): {len(novas)}")
+        # Salvar novas no Supabase
+        if novas:
+            inseridos = sb.salvar_oportunidades(novas)
+            logger.info(f"Registros salvos no Supabase: {inseridos}")
+        # Manter fallback JSON sincronizado
+        seen = load_seen(SEEN_PATH)
+        seen_atualizado = {**seen, **{op["id"]: True for op in novas}}
+        save_seen(seen_atualizado, SEEN_PATH)
+    else:
+        # Fallback: usar JSON local
+        seen = load_seen(SEEN_PATH)
+        novas, seen_atualizado = filtrar_novas_oportunidades(oportunidades, seen)
+        logger.info(f"Oportunidades novas (JSON local): {len(novas)}")
+        save_seen(seen_atualizado, SEEN_PATH)
 
     # Gerar corpo do email (HTML + texto puro)
     corpo_html = gerar_email_html(novas, erros)
@@ -163,11 +225,40 @@ def main():
         assunto = f"[Casting] Nenhuma oportunidade nova — {today.strftime('%d/%m/%Y')}"
 
     # Enviar email se há novidades ou se forçado
+    duracao = time.time() - inicio
+    enviado = False
     if novas or force_send:
         ok = send_email(assunto, corpo_html, corpo_texto, RECIPIENT)
+        enviado = ok
+        if ok and usar_supabase and novas:
+            ids_enviados = [op["id"] for op in novas if op.get("id")]
+            sb.marcar_como_enviadas(ids_enviados)
+        # Registrar execução no Supabase
+        if usar_supabase:
+            sb.registrar_execucao(
+                status="sucesso" if ok else "falha",
+                total_encontradas=len(oportunidades),
+                total_novas=len(novas),
+                total_enviadas=len(novas) if ok else 0,
+                duracao_segundos=duracao,
+                erro_mensagem=None if ok else "Falha no envio SMTP",
+            )
+            if not ok:
+                falhas = sb.contar_falhas_consecutivas()
+                if falhas >= ALERTA_FALHAS_CONSECUTIVAS:
+                    ultimo = sb.ultima_execucao_com_sucesso()
+                    send_alerta_falha(falhas, ultimo)
         return 0 if ok else 1
     else:
         logger.info("Sem novidades — email não enviado (use --force-send para forçar)")
+        if usar_supabase:
+            sb.registrar_execucao(
+                status="sem_novidades",
+                total_encontradas=len(oportunidades),
+                total_novas=0,
+                total_enviadas=0,
+                duracao_segundos=duracao,
+            )
         return 0
 
 
