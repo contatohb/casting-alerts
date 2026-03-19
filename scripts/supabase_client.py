@@ -26,35 +26,34 @@ logger = logging.getLogger(__name__)
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://wuadkgmggkmyglxpxeyh.supabase.co")
 SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY", "")  # Obrigatório via secret do GitHub
 
-_HEADERS_BASE = {
-    "Content-Type": "application/json",
-    "apikey": SUPABASE_KEY,
-    "Authorization": f"Bearer {SUPABASE_KEY}",
-    "Prefer": "return=minimal",
-}
-
 _TIMEOUT = 15  # segundos por requisição
 _MAX_RETRIES = 3
 
 
-def _headers() -> dict:
+def _headers(prefer: str = "return=minimal") -> dict:
     """Retorna headers atualizados com a chave atual (pode mudar via env)."""
     key = os.environ.get("SUPABASE_ANON_KEY", SUPABASE_KEY)
     return {
         "Content-Type": "application/json",
         "apikey": key,
         "Authorization": f"Bearer {key}",
-        "Prefer": "return=minimal",
+        "Prefer": prefer,
     }
 
 
-def _request(method: str, path: str, **kwargs) -> Optional[requests.Response]:
-    """Executa uma requisição HTTP ao Supabase com retry automático."""
+def _request(method: str, path: str, prefer: str = "return=minimal", **kwargs) -> Optional[requests.Response]:
+    """
+    Executa uma requisição HTTP ao Supabase com retry automático.
+    Use o parâmetro `prefer` para customizar o header Prefer (ex: 'resolution=ignore-duplicates,return=minimal').
+    Não passe `headers` diretamente — use `prefer` para customizar o header Prefer.
+    """
     url = f"{SUPABASE_URL}/rest/v1/{path}"
+    # Remove 'headers' de kwargs se alguém passou por engano (evita conflito)
+    kwargs.pop("headers", None)
     for tentativa in range(1, _MAX_RETRIES + 1):
         try:
             resp = requests.request(
-                method, url, headers=_headers(), timeout=_TIMEOUT, **kwargs
+                method, url, headers=_headers(prefer=prefer), timeout=_TIMEOUT, **kwargs
             )
             if resp.status_code < 500:
                 return resp
@@ -133,8 +132,8 @@ def salvar_oportunidades(oportunidades: list) -> int:
         resp = _request(
             "POST",
             "casting_oportunidades",
+            prefer="resolution=ignore-duplicates,return=minimal",
             json=lote,
-            headers={**_headers(), "Prefer": "resolution=ignore-duplicates,return=minimal"},
         )
         if resp is not None and resp.status_code in (200, 201):
             inseridos += len(lote)
@@ -157,8 +156,8 @@ def marcar_como_enviadas(ids: list) -> bool:
         resp = _request(
             "PATCH",
             f"casting_oportunidades?id=in.{ids_param}",
+            prefer="return=minimal",
             json={"enviado_email": True, "data_envio_email": agora},
-            headers={**_headers(), "Prefer": "return=minimal"},
         )
         if resp is None or resp.status_code not in (200, 204):
             status = resp.status_code if resp else "sem resposta"
@@ -194,8 +193,8 @@ def registrar_execucao(
     resp = _request(
         "POST",
         "casting_execucoes",
+        prefer="return=minimal",
         json=registro,
-        headers={**_headers(), "Prefer": "return=minimal"},
     )
     if resp is None or resp.status_code not in (200, 201):
         logger.warning(f"Não foi possível registrar execução no Supabase.")
