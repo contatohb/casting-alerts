@@ -230,9 +230,15 @@ def main():
     if novas or force_send:
         ok = send_email(assunto, corpo_html, corpo_texto, RECIPIENT)
         enviado = ok
+        
+        # CORREÇÃO (2026-03-26): Marcar como enviadas ANTES de registrar execução
         if ok and usar_supabase and novas:
             ids_enviados = [op["id"] for op in novas if op.get("id")]
-            sb.marcar_como_enviadas(ids_enviados)
+            if sb.marcar_como_enviadas(ids_enviados):
+                logger.info(f"Marcadas {len(ids_enviados)} oportunidades como enviadas no Supabase")
+            else:
+                logger.error(f"Falha ao marcar {len(ids_enviados)} oportunidades como enviadas!")
+        
         # Registrar execução no Supabase
         if usar_supabase:
             sb.registrar_execucao(

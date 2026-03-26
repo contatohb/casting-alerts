@@ -77,14 +77,15 @@ def disponivel() -> bool:
 
 def buscar_ids_vistos(dias: int = 30) -> set:
     """
-    Retorna o conjunto de IDs de oportunidades já registradas nos últimos N dias.
+    Retorna o conjunto de IDs de oportunidades JÁ ENVIADAS nos últimos N dias.
     Usado para deduplicação — substitui o casting_seen.json.
+    CORREÇÃO (2026-03-26): Adicionar filtro enviado_email=eq.true para evitar reenvios.
     """
     from datetime import timedelta
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=dias)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(dias=dias)).isoformat()
     resp = _request(
         "GET",
-        f"casting_oportunidades?select=id&data_encontrada=gte.{cutoff}"
+        f"casting_oportunidades?select=id&data_encontrada=gte.{cutoff}&enviado_email=eq.true"
     )
     if resp is None or resp.status_code != 200:
         logger.warning("Não foi possível buscar IDs vistos do Supabase.")
