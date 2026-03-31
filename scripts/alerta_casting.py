@@ -220,9 +220,9 @@ def main():
 
     # Definir assunto
     if novas:
-        assunto = f"[Casting] {len(novas)} nova(s) oportunidade(s) — {today.strftime('%d/%m/%Y')}"
+        assunto = f"[Audições e Jobs] {len(novas)} nova(s) oportunidade(s) — {today.strftime('%d/%m/%Y')}"
     else:
-        assunto = f"[Casting] Nenhuma oportunidade nova — {today.strftime('%d/%m/%Y')}"
+        assunto = f"[Audições e Jobs] Nenhuma oportunidade nova — {today.strftime('%d/%m/%Y')}"
 
     # Enviar email se há novidades ou se forçado
     duracao = time.time() - inicio
