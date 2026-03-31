@@ -449,6 +449,14 @@ def gerar_email_html(oportunidades: List[Dict], erros: List[str]) -> str:
   <noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch>
   </o:OfficeDocumentSettings></xml></noscript>
   <![endif]-->
+  <style>
+    @media print {{
+      body {{ background:#ffffff !important; font-size:11pt; }}
+      table {{ max-width:100% !important; }}
+      a[href]:after {{ content:" (" attr(href) ")"; font-size:9pt; color:#475569; }}
+      td, th {{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }}
+    }}
+  </style>
 </head>
 <body style="margin:0;padding:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,
              'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;-webkit-font-smoothing:antialiased;">
