@@ -483,7 +483,7 @@ def _processar_item_rss(item: ET.Element, fonte: str, categoria_default: str) ->
                 return None
 
     # Filtrar artigos editoriais — KW_EDITORIAL (EN) e KW_EDITORIAL_PT (PT) aplicados a TODAS as fontes
-    if KW_EDITORIAL.search(titulo) or KW_EDITORIAL_PT.search(titulo):
+    if KW_EDITORIAL.search(title) or KW_EDITORIAL_PT.search(title):
         return None
 
     # Para fontes com alto volume editorial: exigir indicadores mais fortes de casting call
