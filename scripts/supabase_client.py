@@ -82,7 +82,7 @@ def buscar_ids_vistos(dias: int = 30) -> set:
     CORREÇÃO (2026-03-26): Adicionar filtro enviado_email=eq.true para evitar reenvios.
     """
     from datetime import timedelta
-    cutoff = (datetime.now(timezone.utc) - timedelta(dias=dias)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=dias)).isoformat()
     resp = _request(
         "GET",
         f"casting_oportunidades?select=id&data_encontrada=gte.{cutoff}&enviado_email=eq.true"
