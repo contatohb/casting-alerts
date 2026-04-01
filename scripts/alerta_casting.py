@@ -211,6 +211,27 @@ def main():
         logger.info(f"Oportunidades novas (JSON local): {len(novas)}")
         save_seen(seen_atualizado, SEEN_PATH)
 
+    # Filtrar oportunidades com prazo de inscrição expirado
+    def _prazo_vigente(opp):
+        data_str = opp.get("data_inscricao", "")
+        if not data_str:
+            return True  # sem prazo = incluir
+        import re as _re
+        m = _re.match(r"^(\d{2})/(\d{2})/(\d{4})$", data_str)
+        if not m:
+            return True  # formato não reconhecido = incluir
+        from datetime import date as _date
+        try:
+            d = _date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+            return d >= today
+        except ValueError:
+            return True
+
+    antes = len(novas)
+    novas = [op for op in novas if _prazo_vigente(op)]
+    if antes != len(novas):
+        logger.info(f"Removidas {antes - len(novas)} oportunidade(s) com prazo expirado")
+
     # Gerar corpo do email (HTML + texto puro)
     corpo_html = gerar_email_html(novas, erros)
     corpo_texto = gerar_email_texto(novas, erros)
