@@ -224,48 +224,37 @@ def main():
     else:
         assunto = f"[Audições e Jobs] Nenhuma oportunidade nova — {today.strftime('%d/%m/%Y')}"
 
-    # Enviar email se há novidades ou se forçado
+    # Enviar email sempre (com ou sem novidades)
     duracao = time.time() - inicio
-    enviado = False
-    if novas or force_send:
-        ok = send_email(assunto, corpo_html, corpo_texto, RECIPIENT)
-        enviado = ok
-        
-        # CORREÇÃO (2026-03-26): Marcar como enviadas ANTES de registrar execução
-        if ok and usar_supabase and novas:
-            ids_enviados = [op["id"] for op in novas if op.get("id")]
-            if sb.marcar_como_enviadas(ids_enviados):
-                logger.info(f"Marcadas {len(ids_enviados)} oportunidades como enviadas no Supabase")
-            else:
-                logger.error(f"Falha ao marcar {len(ids_enviados)} oportunidades como enviadas!")
-        
-        # Registrar execução no Supabase
-        if usar_supabase:
-            sb.registrar_execucao(
-                status="sucesso" if ok else "falha",
-                total_encontradas=len(oportunidades),
-                total_novas=len(novas),
-                total_enviadas=len(novas) if ok else 0,
-                duracao_segundos=duracao,
-                erro_mensagem=None if ok else "Falha no envio SMTP",
-            )
-            if not ok:
-                falhas = sb.contar_falhas_consecutivas()
-                if falhas >= ALERTA_FALHAS_CONSECUTIVAS:
-                    ultimo = sb.ultima_execucao_com_sucesso()
-                    send_alerta_falha(falhas, ultimo)
-        return 0 if ok else 1
-    else:
-        logger.info("Sem novidades — email não enviado (use --force-send para forçar)")
-        if usar_supabase:
-            sb.registrar_execucao(
-                status="sem_novidades",
-                total_encontradas=len(oportunidades),
-                total_novas=0,
-                total_enviadas=0,
-                duracao_segundos=duracao,
-            )
-        return 0
+    ok = send_email(assunto, corpo_html, corpo_texto, RECIPIENT)
+    enviado = ok
+
+    # Marcar como enviadas no Supabase (apenas se houver novas)
+    if ok and usar_supabase and novas:
+        ids_enviados = [op["id"] for op in novas if op.get("id")]
+        if sb.marcar_como_enviadas(ids_enviados):
+            logger.info(f"Marcadas {len(ids_enviados)} oportunidades como enviadas no Supabase")
+        else:
+            logger.error(f"Falha ao marcar {len(ids_enviados)} oportunidades como enviadas!")
+
+    # Registrar execução no Supabase
+    if usar_supabase:
+        sb.registrar_execucao(
+            status="sucesso" if ok else "falha",
+            total_encontradas=len(oportunidades),
+            total_novas=len(novas),
+            total_enviadas=len(novas) if ok else 0,
+            duracao_segundos=duracao,
+            erro_mensagem=None if ok else "Falha no envio SMTP",
+        )
+        if not ok:
+            falhas = sb.contar_falhas_consecutivas()
+            if falhas >= ALERTA_FALHAS_CONSECUTIVAS:
+                ultimo = sb.ultima_execucao_com_sucesso()
+                send_alerta_falha(falhas, ultimo)
+    return 0 if ok else 1
+
+
 
 
 if __name__ == "__main__":
