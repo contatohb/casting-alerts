@@ -274,6 +274,19 @@ def _gerar_card_oportunidade(opp: Dict, cor_borda: str) -> str:
 
     campos_html += "</table>"
 
+    # Botão CTA clicável
+    cta_html = ""
+    cta_link = link_inscricao or link
+    if cta_link:
+        cta_html = (
+            f'<div style="margin-top:14px;text-align:center;">'
+            f'<a href="{_esc(cta_link)}" style="display:inline-block;padding:12px 28px;'
+            f'background:#1a6bbf;color:#ffffff;font-size:14px;font-weight:700;'
+            f'text-decoration:none;border-radius:6px;letter-spacing:0.3px;">'
+            f'{"📝 Inscrever-se" if link_inscricao else "🔗 Ver oportunidade"} →</a>'
+            f'</div>'
+        )
+
     # Resumo (se houver)
     resumo_html = ""
     if descricao_exib:
@@ -294,6 +307,7 @@ def _gerar_card_oportunidade(opp: Dict, cor_borda: str) -> str:
       <div style="margin-bottom:10px;">{badges_html}</div>
       {campos_html}
       {resumo_html}
+      {cta_html}
     </div>"""
 
 
