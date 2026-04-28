@@ -1,0 +1,17 @@
+services:
+  - type: cron
+    name: casting-alerts-daily
+    runtime: python
+    plan: free
+    schedule: "0 13 * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: cd scripts && python alerta_casting.py
+    envVars:
+      - key: SUPABASE_URL
+        value: https://wuadkgmggkmyglxpxeyh.supabase.co
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: GMAIL_APP_PASSWORD
+        sync: false
+      - key: GMAIL_SMTP_USER
+        value: huddsong@gmail.com
