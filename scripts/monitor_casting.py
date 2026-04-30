@@ -1190,9 +1190,20 @@ def filtrar_novas_oportunidades(
     historico: Dict,
 ) -> Tuple[List[Dict], Dict]:
     """Retorna apenas oportunidades novas (não alertadas antes) e atualiza o histórico."""
+    from datetime import date, timedelta
     novas: List[Dict] = []
-    historico_atualizado = historico.copy()
-    hoje = str(__import__("datetime").date.today())
+    hoje = str(date.today())
+
+    # Normalizar histórico: suporte ao formato legado {id: True} (anterior ao dict)
+    historico_normalizado: Dict = {}
+    for k, v in historico.items():
+        if isinstance(v, dict):
+            historico_normalizado[k] = v
+        else:
+            # Formato legado: marcar como alerta antigo para não bloquear limpeza
+            historico_normalizado[k] = {"titulo": k, "fonte": "legado", "data_alerta": "2000-01-01"}
+
+    historico_atualizado = historico_normalizado.copy()
 
     for opp in oportunidades:
         opp_id = opp.get("id", "")
@@ -1206,12 +1217,11 @@ def filtrar_novas_oportunidades(
                 "data_alerta": hoje,
             }
 
-    # Limpar histórico com mais de 90 dias
-    from datetime import date, timedelta
+    # Limpar histórico com mais de 90 dias (inclui entradas legadas com data 2000-01-01)
     limite = date.today() - timedelta(days=90)
     historico_atualizado = {
         k: v for k, v in historico_atualizado.items()
-        if v.get("data_alerta", str(hoje)) >= str(limite)
+        if v.get("data_alerta", hoje) >= str(limite)
     }
     return novas, historico_atualizado
 
