@@ -665,11 +665,21 @@ def _buscar_elenco_digital() -> List[Dict]:
             desc_el = card.find("div", class_="casting-call__description")
             descricao = desc_el.get_text(strip=True) if desc_el else ""
 
-            # Link
+            # Link — tenta classe específica primeiro, depois qualquer <a> no card
             link_el = card.find("a", class_="casting-call__link")
+            if not link_el:
+                link_el = card.find("a", href=True)   # fallback: primeiro link do card
             link = link_el.get("href", "") if link_el else ""
             if link and not link.startswith("http"):
                 link = f"https://elencodigital.com.br{link}"
+            # Se ainda sem link, usar URL base com âncora no hashtag
+            if not link and hashtag:
+                slug = hashtag.lstrip("#").strip()
+                link = f"https://elencodigital.com.br/casting-calls/{slug}" if slug else ""
+            # Item sem nenhum link não tem como o usuário se inscrever — pular
+            if not link:
+                logger.debug(f"Elenco Digital: item '{titulo}' sem link, pulando.")
+                continue
 
             conteudo = f"{titulo} {descricao} {etnia} {idioma} {local}"
 
@@ -1205,10 +1215,44 @@ def filtrar_novas_oportunidades(
 
     historico_atualizado = historico_normalizado.copy()
 
+    def _parse_data(texto: str):
+        """Tenta converter dd/mm/aaaa → date. Retorna None se inválido."""
+        if not texto:
+            return None
+        import re as _re
+        m = _re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", texto.strip())
+        if m:
+            try:
+                from datetime import date as _date
+                return _date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+            except ValueError:
+                return None
+        return None
+
+    hoje_date = date.today()
+    LIMITE_PUBLICACAO = hoje_date - timedelta(days=45)   # descarta publicados há >45 dias
+    descartadas_antigas = 0
+    descartadas_expiradas = 0
+
     for opp in oportunidades:
         opp_id = opp.get("id", "")
         if not opp_id:
             continue
+
+        # ── Filtro 1: data de inscrição já passou ────────────────────────────
+        data_inscricao = _parse_data(opp.get("data_inscricao", ""))
+        if data_inscricao and data_inscricao < hoje_date:
+            descartadas_expiradas += 1
+            logger.debug(f"Expirada (inscrições encerraram {data_inscricao}): {opp.get('titulo','')[:60]}")
+            continue
+
+        # ── Filtro 2: publicada há mais de 45 dias ───────────────────────────
+        data_pub = _parse_data(opp.get("data_publicacao", ""))
+        if data_pub and data_pub < LIMITE_PUBLICACAO:
+            descartadas_antigas += 1
+            logger.debug(f"Antiga (publicada {data_pub}): {opp.get('titulo','')[:60]}")
+            continue
+
         if opp_id not in historico_atualizado:
             novas.append(opp)
             historico_atualizado[opp_id] = {
@@ -1216,6 +1260,9 @@ def filtrar_novas_oportunidades(
                 "fonte": opp.get("fonte", ""),
                 "data_alerta": hoje,
             }
+
+    if descartadas_expiradas or descartadas_antigas:
+        logger.info(f"  Filtro de datas: {descartadas_expiradas} expiradas, {descartadas_antigas} antigas (>45d) descartadas")
 
     # Limpar histórico com mais de 90 dias (inclui entradas legadas com data 2000-01-01)
     limite = date.today() - timedelta(days=90)
