@@ -471,7 +471,7 @@ def _processar_item_rss(item: ET.Element, fonte: str, categoria_default: str) ->
     desc_raw = item.findtext("description") or ""
     desc = html.unescape(BeautifulSoup(desc_raw, "html.parser").get_text())
     cats = [c.text.lower() for c in item.findall("category") if c.text]
-    pub_date = item.findtext("pubDate") or ""
+    pub_date = _normalizar_data(item.findtext("pubDate") or "")
 
     if not title or not link:
         return None
@@ -878,6 +878,15 @@ def _normalizar_data(texto: str) -> str:
     m = re.match(r"^(\d{4})-(\d{1,2})-(\d{1,2})$", texto)
     if m:
         return f"{int(m.group(3)):02d}/{int(m.group(2)):02d}/{m.group(1)}"
+
+    # Formato RFC 2822 (pubDate de feeds RSS): "Thu, 02 May 2026 13:00:00 +0000"
+    try:
+        from email.utils import parsedate
+        t = parsedate(texto)
+        if t and t[0] and t[1] and t[2]:
+            return f"{t[2]:02d}/{t[1]:02d}/{t[0]}"
+    except Exception:
+        pass
 
     # Não foi possível normalizar: retornar original
     return texto

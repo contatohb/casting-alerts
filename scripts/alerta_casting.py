@@ -194,6 +194,10 @@ def main():
     # Determinar oportunidades novas (deduplicação)
     if usar_supabase:
         ids_vistos = sb.buscar_ids_vistos(dias=30)
+        # Mesclar com JSON local para cobrir falhas intermitentes do Supabase:
+        # se o Supabase não responder, o JSON evita re-envio das mesmas oportunidades.
+        seen = load_seen(SEEN_PATH)
+        ids_vistos = ids_vistos | set(seen.keys())
         novas = [op for op in oportunidades if op.get("id") not in ids_vistos]
         logger.info(f"Oportunidades novas (Supabase): {len(novas)}")
         # Salvar novas no Supabase
@@ -201,7 +205,6 @@ def main():
             inseridos = sb.salvar_oportunidades(novas)
             logger.info(f"Registros salvos no Supabase: {inseridos}")
         # Manter fallback JSON sincronizado
-        seen = load_seen(SEEN_PATH)
         seen_atualizado = {**seen, **{op["id"]: True for op in novas}}
         save_seen(seen_atualizado, SEEN_PATH)
     else:
@@ -211,13 +214,38 @@ def main():
         logger.info(f"Oportunidades novas (JSON local): {len(novas)}")
         save_seen(seen_atualizado, SEEN_PATH)
 
+    # Filtrar oportunidades com publicação muito antiga (>45 dias)
+    # Aplica-se ao caminho Supabase (o caminho JSON já faz isso em filtrar_novas_oportunidades).
+    if usar_supabase:
+        from datetime import timedelta
+        import re as _re_pub
+        limite_pub = today - timedelta(days=45)
+
+        def _publicacao_recente(opp):
+            data_str = opp.get("data_publicacao", "")
+            if not data_str:
+                return True
+            m = _re_pub.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", data_str)
+            if not m:
+                return True
+            try:
+                d = date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+                return d >= limite_pub
+            except ValueError:
+                return True
+
+        antes_pub = len(novas)
+        novas = [op for op in novas if _publicacao_recente(op)]
+        if antes_pub != len(novas):
+            logger.info(f"Removidas {antes_pub - len(novas)} oportunidade(s) com publicação antiga (>45 dias)")
+
     # Filtrar oportunidades com prazo de inscrição expirado
     def _prazo_vigente(opp):
         data_str = opp.get("data_inscricao", "")
         if not data_str:
             return True  # sem prazo = incluir
         import re as _re
-        m = _re.match(r"^(\d{2})/(\d{2})/(\d{4})$", data_str)
+        m = _re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", data_str)
         if not m:
             return True  # formato não reconhecido = incluir
         from datetime import date as _date
