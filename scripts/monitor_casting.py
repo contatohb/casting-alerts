@@ -17,6 +17,7 @@ import logging
 import re
 import time
 import xml.etree.ElementTree as ET
+from email.utils import parsedate as _parsedate_rfc2822
 from typing import Dict, List, Optional, Tuple
 
 import requests
@@ -881,8 +882,7 @@ def _normalizar_data(texto: str) -> str:
 
     # Formato RFC 2822 (pubDate de feeds RSS): "Thu, 02 May 2026 13:00:00 +0000"
     try:
-        from email.utils import parsedate
-        t = parsedate(texto)
+        t = _parsedate_rfc2822(texto)
         if t and t[0] and t[1] and t[2]:
             return f"{t[2]:02d}/{t[1]:02d}/{t[0]}"
     except Exception:

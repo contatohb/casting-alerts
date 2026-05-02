@@ -15,10 +15,14 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sys
 import time
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List
+
+# Padrão compartilhado para datas no formato dd/mm/aaaa
+_RE_DATA = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{4})$")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -217,15 +221,13 @@ def main():
     # Filtrar oportunidades com publicação muito antiga (>45 dias)
     # Aplica-se ao caminho Supabase (o caminho JSON já faz isso em filtrar_novas_oportunidades).
     if usar_supabase:
-        from datetime import timedelta
-        import re as _re_pub
         limite_pub = today - timedelta(days=45)
 
         def _publicacao_recente(opp):
             data_str = opp.get("data_publicacao", "")
             if not data_str:
                 return True
-            m = _re_pub.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", data_str)
+            m = _RE_DATA.match(data_str)
             if not m:
                 return True
             try:
@@ -244,13 +246,11 @@ def main():
         data_str = opp.get("data_inscricao", "")
         if not data_str:
             return True  # sem prazo = incluir
-        import re as _re
-        m = _re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", data_str)
+        m = _RE_DATA.match(data_str)
         if not m:
             return True  # formato não reconhecido = incluir
-        from datetime import date as _date
         try:
-            d = _date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+            d = date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
             return d >= today
         except ValueError:
             return True
