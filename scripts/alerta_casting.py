@@ -192,18 +192,40 @@ def main():
         return 1
 
     # Determinar oportunidades novas (deduplicação)
+    usou_supabase_dedup = False
     if usar_supabase:
         ids_vistos = sb.buscar_ids_vistos(dias=30)
-        novas = [op for op in oportunidades if op.get("id") not in ids_vistos]
-        logger.info(f"Oportunidades novas (Supabase): {len(novas)}")
-        # Salvar novas no Supabase
-        if novas:
-            inseridos = sb.salvar_oportunidades(novas)
-            logger.info(f"Registros salvos no Supabase: {inseridos}")
-        # Manter fallback JSON sincronizado
-        seen = load_seen(SEEN_PATH)
-        seen_atualizado = {**seen, **{op["id"]: True for op in novas}}
-        save_seen(seen_atualizado, SEEN_PATH)
+        if ids_vistos is None:
+            # Supabase falhou na leitura — usar JSON local para não enviar duplicatas
+            logger.warning("Leitura do Supabase falhou — usando JSON local para deduplicação.")
+            seen = load_seen(SEEN_PATH)
+            novas, seen_atualizado = filtrar_novas_oportunidades(oportunidades, seen)
+            logger.info(f"Oportunidades novas (fallback JSON): {len(novas)}")
+            save_seen(seen_atualizado, SEEN_PATH)
+        else:
+            usou_supabase_dedup = True
+            novas = [op for op in oportunidades if op.get("id") not in ids_vistos]
+            logger.info(f"Oportunidades novas (Supabase): {len(novas)}")
+            # Salvar novas no Supabase
+            if novas:
+                inseridos = sb.salvar_oportunidades(novas)
+                logger.info(f"Registros salvos no Supabase: {inseridos}")
+            # Manter fallback JSON sincronizado com formato correto
+            today_str = today.isoformat()
+            seen = load_seen(SEEN_PATH)
+            seen_atualizado = {
+                **seen,
+                **{
+                    op["id"]: {
+                        "titulo": op.get("titulo", ""),
+                        "fonte": op.get("fonte", ""),
+                        "data_alerta": today_str,
+                    }
+                    for op in novas
+                    if op.get("id")
+                }
+            }
+            save_seen(seen_atualizado, SEEN_PATH)
     else:
         # Fallback: usar JSON local
         seen = load_seen(SEEN_PATH)
@@ -250,8 +272,8 @@ def main():
     ok = send_email(assunto, corpo_html, corpo_texto, RECIPIENT)
     enviado = ok
 
-    # Marcar como enviadas no Supabase (apenas se houver novas)
-    if ok and usar_supabase and novas:
+    # Marcar como enviadas no Supabase (apenas quando leitura/escrita Supabase funcionou)
+    if ok and usar_supabase and usou_supabase_dedup and novas:
         ids_enviados = [op["id"] for op in novas if op.get("id")]
         if sb.marcar_como_enviadas(ids_enviados):
             logger.info(f"Marcadas {len(ids_enviados)} oportunidades como enviadas no Supabase")
