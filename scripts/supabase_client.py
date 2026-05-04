@@ -75,12 +75,14 @@ def disponivel() -> bool:
     return resp is not None and resp.status_code == 200
 
 
-def buscar_ids_vistos(dias: int = 30) -> set:
+def buscar_ids_vistos(dias: int = 30) -> Optional[set]:
     """
     Retorna o conjunto de IDs de oportunidades JÁ ENVIADAS nos últimos N dias.
     Usado para deduplicação — substitui o casting_seen.json.
+    Retorna None em caso de falha de rede/Supabase (distinto de set() vazio = sem histórico).
     CORREÇÃO (2026-03-26): Filtro enviado_email=eq.true.
     CORREÇÃO (2026-04-10): Usar created_at (coluna automática) em vez de data_encontrada (inexistente).
+    CORREÇÃO (2026-05-04): Retornar None em falha (não set() vazio) para permitir fallback JSON.
     """
     from datetime import timedelta
     cutoff = (datetime.now(timezone.utc) - timedelta(days=dias)).isoformat()
@@ -90,12 +92,12 @@ def buscar_ids_vistos(dias: int = 30) -> set:
     )
     if resp is None or resp.status_code != 200:
         logger.warning("Não foi possível buscar IDs vistos do Supabase.")
-        return set()
+        return None  # None = falha; set() vazio = sucesso sem histórico
     try:
         return {row["id"] for row in resp.json()}
     except Exception as e:
         logger.warning(f"Erro ao processar IDs vistos: {e}")
-        return set()
+        return None
 
 
 def salvar_oportunidades(oportunidades: list) -> int:

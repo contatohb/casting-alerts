@@ -555,7 +555,7 @@ def _processar_item_rss(item: ET.Element, fonte: str, categoria_default: str) ->
         "fonte": fonte,
         "categoria": categoria,
         "link": link,
-        "data_publicacao": pub_date,
+        "data_publicacao": _normalizar_data(pub_date),
         "genero": genero,
         "faixa_etaria": faixa_etaria,
         "data_inscricao": data_inscricao,
@@ -834,6 +834,16 @@ def _normalizar_data(texto: str) -> str:
         mes, dia, ano = int(m.group(1)), int(m.group(2)), int(m.group(3))
         if mes > 12 and dia <= 12:  # Provavelmente mm/dd
             return f"{dia:02d}/{mes:02d}/{ano}"
+
+    # Formato RFC 2822 de feeds RSS (ex: "Sat, 22 Mar 2026 10:00:00 -0300")
+    from email.utils import parsedate
+    tup = parsedate(texto)
+    if tup:
+        try:
+            d = datetime.date(tup[0], tup[1], tup[2])
+            return f"{d.day:02d}/{d.month:02d}/{d.year}"
+        except (ValueError, TypeError):
+            pass
 
     # Formato "DD de Mês" ou "DD de Mês de AAAA" (português)
     m = re.match(

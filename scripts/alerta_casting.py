@@ -15,10 +15,11 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sys
 import time
-from datetime import date, datetime, timezone
-from typing import Dict, List
+from datetime import date, datetime, timedelta, timezone
+from typing import Dict, List, Optional
 
 logging.basicConfig(
     level=logging.INFO,
@@ -154,10 +155,7 @@ def main():
 
     # Importar módulos
     try:
-        from monitor_casting import (
-            buscar_casting,
-            filtrar_novas_oportunidades,
-        )
+        from monitor_casting import buscar_casting, filtrar_novas_oportunidades
         from email_template import gerar_email_html, gerar_email_texto
         import supabase_client as sb
     except ImportError as e:
@@ -192,21 +190,58 @@ def main():
         return 1
 
     # Determinar oportunidades novas (deduplicação)
+    seen = load_seen(SEEN_PATH)
+    ids_json = set(seen.keys())
+
     if usar_supabase:
-        ids_vistos = sb.buscar_ids_vistos(dias=30)
+        ids_supabase = sb.buscar_ids_vistos(dias=30)
+        if ids_supabase is None:
+            # Supabase falhou — usar apenas JSON local
+            logger.warning("Supabase indisponível para deduplicação — usando fallback JSON.")
+            ids_vistos = ids_json
+        else:
+            # Supabase OK — mesclar com JSON para segurança extra
+            ids_vistos = ids_supabase | ids_json
         novas = [op for op in oportunidades if op.get("id") not in ids_vistos]
-        logger.info(f"Oportunidades novas (Supabase): {len(novas)}")
+        logger.info(f"Oportunidades novas (Supabase+JSON): {len(novas)}")
+
+        # Filtrar oportunidades publicadas há mais de 45 dias
+        hoje_date = date.today()
+        LIMITE_PUBLICACAO = hoje_date - timedelta(days=45)
+
+        def _parse_data_pub(texto: str):
+            if not texto:
+                return None
+            m = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", texto.strip())
+            if m:
+                try:
+                    return date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+                except ValueError:
+                    return None
+            return None
+
+        antes_pub = len(novas)
+        novas = [
+            op for op in novas
+            if (_parse_data_pub(op.get("data_publicacao", "")) or hoje_date) >= LIMITE_PUBLICACAO
+        ]
+        if antes_pub != len(novas):
+            logger.info(f"Removidas {antes_pub - len(novas)} oportunidade(s) publicadas há mais de 45 dias")
+
         # Salvar novas no Supabase
         if novas:
             inseridos = sb.salvar_oportunidades(novas)
             logger.info(f"Registros salvos no Supabase: {inseridos}")
-        # Manter fallback JSON sincronizado
-        seen = load_seen(SEEN_PATH)
-        seen_atualizado = {**seen, **{op["id"]: True for op in novas}}
+        # Manter fallback JSON sincronizado no formato correto
+        hoje_str = str(date.today())
+        seen_atualizado = {**seen, **{
+            op["id"]: {"titulo": op.get("titulo", ""), "fonte": op.get("fonte", ""), "data_alerta": hoje_str}
+            for op in novas
+        }}
         save_seen(seen_atualizado, SEEN_PATH)
     else:
         # Fallback: usar JSON local
-        seen = load_seen(SEEN_PATH)
+        from monitor_casting import filtrar_novas_oportunidades
         novas, seen_atualizado = filtrar_novas_oportunidades(oportunidades, seen)
         logger.info(f"Oportunidades novas (JSON local): {len(novas)}")
         save_seen(seen_atualizado, SEEN_PATH)
@@ -216,13 +251,11 @@ def main():
         data_str = opp.get("data_inscricao", "")
         if not data_str:
             return True  # sem prazo = incluir
-        import re as _re
-        m = _re.match(r"^(\d{2})/(\d{2})/(\d{4})$", data_str)
+        m = re.match(r"^(\d{2})/(\d{2})/(\d{4})$", data_str)
         if not m:
             return True  # formato não reconhecido = incluir
-        from datetime import date as _date
         try:
-            d = _date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+            d = date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
             return d >= today
         except ValueError:
             return True

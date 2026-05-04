@@ -1,19 +1,87 @@
 {
-  "ed_#norte": true,
-  "ed_#para": true,
-  "ed_#fiat": true,
-  "https://guiadoator.com.br/palhacos-voluntarios-sp/": true,
-  "https://guiadoator.com.br/bailarinos-para-espetaculo-musical-sc/": true,
-  "https://guiadoator.com.br/selecao-para-comercial-sp/": true,
-  "https://abroadwayeaqui.com.br/hadestown-brasil-saiba-como-participar-das-audicoes/": true,
-  "https://abroadwayeaqui.com.br/musical-oficial-da-tv-colosso-busca-elenco/": true,
-  "ed_#elencobrasilia": true,
-  "ed_#argentina": true,
-  "https://guiadoator.com.br/audicao-para-musical-sp-3/": true,
-  "https://projectcasting.com/blog/news/homelander-actor-breaks-character-viral-set-story": true,
-  "ed_#copade70": true,
-  "https://guiadoator.com.br/atores-para-teatro-educacional-sp/": true,
-  "https://guiadoator.com.br/figuracao-em-curta-metragem-sp/": true,
-  "ed_#goiasdistritofederal": true,
-  "https://elencodigital.com.br//casting-calls/goiasdistritofederal": true
+  "ed_#norte": {
+    "titulo": "ed_#norte",
+    "fonte": "historico",
+    "data_alerta": "2026-05-04"
+  },
+  "ed_#para": {
+    "titulo": "ed_#para",
+    "fonte": "historico",
+    "data_alerta": "2026-05-04"
+  },
+  "ed_#fiat": {
+    "titulo": "ed_#fiat",
+    "fonte": "historico",
+    "data_alerta": "2026-05-04"
+  },
+  "https://guiadoator.com.br/palhacos-voluntarios-sp/": {
+    "titulo": "https://guiadoator.com.br/palhacos-voluntarios-sp/",
+    "fonte": "historico",
+    "data_alerta": "2026-05-04"
+  },
+  "https://guiadoator.com.br/bailarinos-para-espetaculo-musical-sc/": {
+    "titulo": "https://guiadoator.com.br/bailarinos-para-espetaculo-musical-sc/",
+    "fonte": "historico",
+    "data_alerta": "2026-05-04"
+  },
+  "https://guiadoator.com.br/selecao-para-comercial-sp/": {
+    "titulo": "https://guiadoator.com.br/selecao-para-comercial-sp/",
+    "fonte": "historico",
+    "data_alerta": "2026-05-04"
+  },
+  "https://abroadwayeaqui.com.br/hadestown-brasil-saiba-como-participar-das-audicoes/": {
+    "titulo": "https://abroadwayeaqui.com.br/hadestown-brasil-saiba-como-participar-das-audicoes/",
+    "fonte": "historico",
+    "data_alerta": "2026-05-04"
+  },
+  "https://abroadwayeaqui.com.br/musical-oficial-da-tv-colosso-busca-elenco/": {
+    "titulo": "https://abroadwayeaqui.com.br/musical-oficial-da-tv-colosso-busca-elenco/",
+    "fonte": "historico",
+    "data_alerta": "2026-05-04"
+  },
+  "ed_#elencobrasilia": {
+    "titulo": "ed_#elencobrasilia",
+    "fonte": "historico",
+    "data_alerta": "2026-05-04"
+  },
+  "ed_#argentina": {
+    "titulo": "ed_#argentina",
+    "fonte": "historico",
+    "data_alerta": "2026-05-04"
+  },
+  "https://guiadoator.com.br/audicao-para-musical-sp-3/": {
+    "titulo": "https://guiadoator.com.br/audicao-para-musical-sp-3/",
+    "fonte": "historico",
+    "data_alerta": "2026-05-04"
+  },
+  "https://projectcasting.com/blog/news/homelander-actor-breaks-character-viral-set-story": {
+    "titulo": "https://projectcasting.com/blog/news/homelander-actor-breaks-character-viral-set-story",
+    "fonte": "historico",
+    "data_alerta": "2026-05-04"
+  },
+  "ed_#copade70": {
+    "titulo": "ed_#copade70",
+    "fonte": "historico",
+    "data_alerta": "2026-05-04"
+  },
+  "https://guiadoator.com.br/atores-para-teatro-educacional-sp/": {
+    "titulo": "https://guiadoator.com.br/atores-para-teatro-educacional-sp/",
+    "fonte": "historico",
+    "data_alerta": "2026-05-04"
+  },
+  "https://guiadoator.com.br/figuracao-em-curta-metragem-sp/": {
+    "titulo": "https://guiadoator.com.br/figuracao-em-curta-metragem-sp/",
+    "fonte": "historico",
+    "data_alerta": "2026-05-04"
+  },
+  "ed_#goiasdistritofederal": {
+    "titulo": "ed_#goiasdistritofederal",
+    "fonte": "historico",
+    "data_alerta": "2026-05-04"
+  },
+  "https://elencodigital.com.br//casting-calls/goiasdistritofederal": {
+    "titulo": "https://elencodigital.com.br//casting-calls/goiasdistritofederal",
+    "fonte": "historico",
+    "data_alerta": "2026-05-04"
+  }
 }
