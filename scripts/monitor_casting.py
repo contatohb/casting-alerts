@@ -17,6 +17,7 @@ import logging
 import re
 import time
 import xml.etree.ElementTree as ET
+from email.utils import parsedate as _parsedate_rfc2822
 from typing import Dict, List, Optional, Tuple
 
 import requests
@@ -836,8 +837,7 @@ def _normalizar_data(texto: str) -> str:
             return f"{dia:02d}/{mes:02d}/{ano}"
 
     # Formato RFC 2822 de feeds RSS (ex: "Sat, 22 Mar 2026 10:00:00 -0300")
-    from email.utils import parsedate
-    tup = parsedate(texto)
+    tup = _parsedate_rfc2822(texto)
     if tup:
         try:
             d = datetime.date(tup[0], tup[1], tup[2])
