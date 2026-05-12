@@ -39,7 +39,7 @@ try:
 except Exception:
     pass
 
-RECIPIENT = os.getenv("MONITOR_RECIPIENT", "huddsong@gmail.com")
+RECIPIENT = os.getenv("MONITOR_RECIPIENT", "huddsonviana@gmail.com")
 SEEN_PATH = os.path.join(_PROJECT_DIR, "data", "casting_seen.json")
 
 # Limiar de falhas consecutivas para enviar alerta de sistema
@@ -71,7 +71,7 @@ def save_seen(seen: dict, path: str) -> None:
 # Envio de email via SMTP (Gmail com App Password)
 # ─────────────────────────────────────────────────────────────────
 
-GMAIL_SENDER = os.getenv("GMAIL_SENDER", "huddsong@gmail.com")
+GMAIL_SENDER = os.getenv("GMAIL_SENDER", "huddsonviana@gmail.com")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "")
 
 

@@ -47,7 +47,7 @@ jobs:
 
       - name: Send daily casting alert
         env:
-          MONITOR_RECIPIENT: huddsong@gmail.com
+          MONITOR_RECIPIENT: huddsonviana@gmail.com
           GMAIL_MCP_TOKEN: ${{ secrets.GMAIL_MCP_TOKEN }}
         run: |
           cd scripts && python alerta_casting.py

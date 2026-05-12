@@ -504,7 +504,7 @@ def _gerar_html_relatorio(auditoria: Dict, historico: List[Dict]) -> str:
 
 def enviar_relatorio(auditoria: Dict, historico: List[Dict]) -> bool:
     """Envia o relatório de auditoria por email."""
-    gmail_user = os.environ.get("GMAIL_USER", "huddsong@gmail.com")
+    gmail_user = os.environ.get("GMAIL_USER", "huddsonviana@gmail.com")
     gmail_pass = os.environ.get("GMAIL_APP_PASSWORD", "")
 
     if not gmail_pass:

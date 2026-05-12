@@ -570,7 +570,7 @@ def gerar_email_html(oportunidades: List[Dict], erros: List[str]) -> str:
             </p>
             <div style="margin-top:10px;padding-top:10px;border-top:1px solid #1e293b;">
               <span style="font-size:11px;color:#334155;">
-                {hoje_str} · huddsong@gmail.com
+                {hoje_str} · huddsonviana@gmail.com
               </span>
             </div>
           </div>
