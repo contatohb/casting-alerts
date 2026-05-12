@@ -74,6 +74,33 @@ def save_seen(seen: dict, path: str) -> None:
 GMAIL_SENDER = os.getenv("GMAIL_SENDER", "huddsonviana@gmail.com")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "")
 
+# Mailgun (primário)
+MAILGUN_API_KEY = os.getenv("MAILGUN_API_KEY", "").strip()
+MAILGUN_DOMAIN  = os.getenv("MAILGUN_DOMAIN", "hb-advisory.com.br").strip()
+FROM_EMAIL      = os.getenv("FROM_EMAIL", "Intellicore Casting <noreply@hb-advisory.com.br>")
+MAILGUN_BASE_URL = "https://api.mailgun.net/v3"
+
+
+def _send_via_mailgun(subject: str, html_body: str, recipient: str) -> bool:
+    """Envia email via Mailgun (primário, sem dependências locais)."""
+    if not MAILGUN_API_KEY or not MAILGUN_DOMAIN:
+        return False
+    try:
+        import requests as req
+        url  = f"{MAILGUN_BASE_URL}/{MAILGUN_DOMAIN}/messages"
+        data = {"from": FROM_EMAIL, "to": [recipient], "subject": subject,
+                "html": html_body, "text": " "}
+        resp = req.post(url, auth=("api", MAILGUN_API_KEY), data=data, timeout=30)
+        if resp.status_code == 200:
+            logger.info(f"Email enviado via Mailgun para {recipient}")
+            return True
+        logger.error(f"Mailgun {resp.status_code}: {resp.text[:200]}")
+        return False
+    except Exception as exc:
+        logger.error(f"Erro Mailgun: {exc}")
+        return False
+
+
 
 def send_email(subject: str, body_html: str, body_text: str, recipient: str) -> bool:
     """
@@ -84,8 +111,12 @@ def send_email(subject: str, body_html: str, body_text: str, recipient: str) -> 
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
 
+    # Tentar Mailgun primeiro
+    if _send_via_mailgun(subject, body_html, recipient):
+        return True
+    # Fallback: SMTP Gmail
     if not GMAIL_APP_PASSWORD:
-        logger.error("GMAIL_APP_PASSWORD não configurado. Defina o secret no GitHub Actions.")
+        logger.warning("GMAIL_APP_PASSWORD não configurado — sem fallback SMTP.")
         return False
 
     try:
