@@ -35,9 +35,12 @@ jobs:
           retry_wait_seconds: 60
           command: cd scripts && python alerta_casting.py
         env:
-          MONITOR_RECIPIENT: huddsonviana@gmail.com
-          GMAIL_SENDER: huddsonviana@gmail.com
+          MONITOR_RECIPIENT: ${{ secrets.MONITOR_RECIPIENT }}
+          GMAIL_SENDER: ${{ secrets.GMAIL_SMTP_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          MAILGUN_API_KEY: ${{ secrets.MAILGUN_API_KEY }}
+          MAILGUN_DOMAIN: ${{ secrets.MAILGUN_DOMAIN }}
+          FROM_EMAIL: ${{ secrets.FROM_EMAIL }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
 
