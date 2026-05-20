@@ -224,7 +224,10 @@ def main():
 
     # Determinar oportunidades novas (deduplicação)
     if usar_supabase:
-        ids_vistos = sb.buscar_ids_vistos(dias=30)
+        ids_vistos = sb.buscar_ids_vistos()
+        if ids_vistos is None:
+            logger.error("Supabase falhou — abortando para evitar duplicatas")
+            return 1
         novas = [op for op in oportunidades if op.get("id") not in ids_vistos]
         logger.info(f"Oportunidades novas (Supabase): {len(novas)}")
         # Salvar novas no Supabase
