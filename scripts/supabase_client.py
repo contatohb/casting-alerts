@@ -77,25 +77,22 @@ def disponivel() -> bool:
 
 def buscar_ids_vistos(dias: int = 30) -> set:
     """
-    Retorna o conjunto de IDs de oportunidades JÁ ENVIADAS nos últimos N dias.
-    Usado para deduplicação — substitui o casting_seen.json.
-    CORREÇÃO (2026-03-26): Filtro enviado_email=eq.true.
-    created_at não existe — usar data_encontrada (coluna real da tabela).
+    Retorna o conjunto de IDs de oportunidades JÁ ENVIADAS (todos, sem limite de data).
+    IDs enviados nunca expiram — sem filtro de data evita reenvio de itens antigos.
+    Retorna None em caso de falha (sinal para abortar envio, evitar duplicatas).
     """
-    from datetime import timedelta
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=dias)).isoformat()
     resp = _request(
         "GET",
-        f"casting_oportunidades?select=id&data_encontrada=gte.{cutoff}&enviado_email=eq.true"
+        "casting_oportunidades?select=id&enviado_email=eq.true"
     )
     if resp is None or resp.status_code != 200:
-        logger.warning("Não foi possível buscar IDs vistos do Supabase.")
-        return set()
+        logger.error("Supabase indisponível — abortando para evitar duplicatas.")
+        return None
     try:
         return {row["id"] for row in resp.json()}
     except Exception as e:
-        logger.warning(f"Erro ao processar IDs vistos: {e}")
-        return set()
+        logger.error(f"Erro ao processar IDs vistos: {e}")
+        return None
 
 
 def salvar_oportunidades(oportunidades: list) -> int:
