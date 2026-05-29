@@ -279,7 +279,13 @@ def main():
     else:
         assunto = f"[Audições e Jobs] Nenhuma oportunidade nova — {today.strftime('%d/%m/%Y')}"
 
-    # Enviar email sempre (com ou sem novidades)
+    # Enviar email APENAS quando há oportunidades novas
+    if not novas:
+        logger.info("Nenhuma oportunidade nova — email não enviado.")
+        duracao = time.time() - inicio
+        if usar_supabase:
+            sb.registrar_execucao(status="sem_novidades", total_encontradas=len(oportunidades), total_novas=0, duracao_segundos=duracao)
+        return 0
     duracao = time.time() - inicio
     ok = send_email(assunto, corpo_html, corpo_texto, RECIPIENT)
     enviado = ok
