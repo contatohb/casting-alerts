@@ -68,5 +68,10 @@
     "titulo": "Elenco para filme independente (RJ)",
     "fonte": "Guia do Ator",
     "data_alerta": "2026-07-24"
+  },
+  "https://guiadoator.com.br/audicao-para-espetaculo-infantojuvenil-sp/": {
+    "titulo": "Audição para espetáculo infantojuvenil (SP)",
+    "fonte": "Guia do Ator",
+    "data_alerta": "2026-07-28"
   }
 }
