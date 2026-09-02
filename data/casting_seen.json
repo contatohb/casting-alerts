@@ -98,5 +98,10 @@
     "titulo": "Elenco para longa-metragem (PE)",
     "fonte": "Guia do Ator",
     "data_alerta": "2026-08-21"
+  },
+  "https://guiadoator.com.br/pesquisa-de-elenco-br-2/": {
+    "titulo": "Pesquisa de elenco (BR)",
+    "fonte": "Guia do Ator",
+    "data_alerta": "2026-09-02"
   }
 }
