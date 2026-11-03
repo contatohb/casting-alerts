@@ -1,14 +1,4 @@
 {
-  "https://guiadoator.com.br/audicao-para-musical-on-your-feet-sp/": {
-    "titulo": "Audição para musical “On Your Feet” (SP)",
-    "fonte": "Guia do Ator",
-    "data_alerta": "2026-08-04"
-  },
-  "https://projectcasting.com/blog/news/margot-robbie": {
-    "titulo": "Margot Robbie’s Barbie Sequel Faces Major Roadblock as Warner Bros. Negotiates New Deals",
-    "fonte": "Project Casting",
-    "data_alerta": "2026-08-04"
-  },
   "https://guiadoator.com.br/casting-para-videoclipe-sp-2/": {
     "titulo": "Casting para videoclipe (SP)",
     "fonte": "Guia do Ator",
@@ -78,5 +68,10 @@
     "titulo": "Ator para publicidade (SP)",
     "fonte": "Guia do Ator",
     "data_alerta": "2026-10-07"
+  },
+  "https://guiadoator.com.br/chamada-de-elenco-para-longa-rj/": {
+    "titulo": "Chamada de elenco para longa (RJ)",
+    "fonte": "Guia do Ator",
+    "data_alerta": "2026-11-03"
   }
 }
