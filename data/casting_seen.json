@@ -93,5 +93,10 @@
     "titulo": "Teste de voz (SP)",
     "fonte": "Guia do Ator",
     "data_alerta": "2026-11-19"
+  },
+  "https://guiadoator.com.br/teste-para-audiovisual-rj/": {
+    "titulo": "Teste para audiovisual (RJ)",
+    "fonte": "Guia do Ator",
+    "data_alerta": "2026-11-25"
   }
 }
